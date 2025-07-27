@@ -55,9 +55,10 @@ def test_modulations():
             mesh_filename = os.path.join(outdir, "reconstruct")
             
             # given point cloud, create modulations (e.g. 1D latent vectors)
-            plane_features = model.sdf_model.pointnet.get_plane_features(point_cloud.cuda())  # tuple, 3 items with ([1, D, resolution, resolution])
-            plane_features = torch.cat(plane_features, dim=1) # ([1, D*3, resolution, resolution])
-            recon = model.vae_model.generate(plane_features) # ([1, D*3, resolution, resolution])
+            base_points = model.get_base_points(point_cloud.cuda()) #Get (B, 32, 32, 32, 3)
+
+            base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
+            recon = model.vae_model.generate(base_points) # ([1, D*3, resolution, resolution])
             #print("mesh filename: ", mesh_filename)
             # N is the grid resolution for marching cubes; set max_batch to largest number gpu can hold
             mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=256, max_batch=2**21, from_plane_features=True)
