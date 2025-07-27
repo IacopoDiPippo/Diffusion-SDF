@@ -6,5 +6,5 @@ snapshot_download(
     repo_type="dataset",
     allow_patterns="ShapeNetCore.v2.zip",  # Downloads only this file
     local_dir="./shapenet_download",       # Saves to this folder
-    token="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"                  # Required for LFS files
+    token=""                  # Required for LFS files
 )
