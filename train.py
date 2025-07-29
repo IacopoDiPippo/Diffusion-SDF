@@ -40,9 +40,9 @@ def train():
     train_dataloader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=args.batch_size, num_workers=args.workers,
-            drop_last=True, shuffle=True, pin_memory=True, persistent_workers=True
+            drop_last=False, shuffle=True, pin_memory=True, persistent_workers=True
         )
-
+    print(f"Length Data: {len(train_dataset)}")  # Should be > 0
     # creates a copy of current code / files in the config folder
     save_code_to_conf(args.exp_dir) 
     
@@ -52,6 +52,8 @@ def train():
     callbacks = [callback, lr_monitor]
 
     model = CombinedModel(specs)
+
+    print(f"Model structure: {model}")  # Simple but effective overview
 
     # note on loading from checkpoint:
     # if resuming from training modulation, diffusion, or end-to-end, just load saved checkpoint 

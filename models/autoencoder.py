@@ -40,7 +40,10 @@ class BetaVAE(nn.Module):
         modules = []
         if hidden_dims is None:
             hidden_dims = [32, 64, 128]
+<<<<<<< Updated upstream
             
+=======
+>>>>>>> Stashed changes
 
         self.hidden_dims = hidden_dims
 
@@ -49,7 +52,11 @@ class BetaVAE(nn.Module):
             modules.append(
                 nn.Sequential(
                     nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=2, padding=1),
+<<<<<<< Updated upstream
                     nn.BatchNorm2d(h_dim),
+=======
+                    nn.BatchNorm3d(h_dim),
+>>>>>>> Stashed changes
                     nn.LeakyReLU())
             )
             in_channels = h_dim
@@ -62,8 +69,11 @@ class BetaVAE(nn.Module):
         # Build Decoder
         modules = []
 
+<<<<<<< Updated upstream
 
         #print(self)
+=======
+>>>>>>> Stashed changes
 
     def encode(self, enc_input: Tensor) -> List[Tensor]:
         """
@@ -76,13 +86,16 @@ class BetaVAE(nn.Module):
         result = self.encoder(enc_input)  # [B, D, 4, 4, 4]
         result = torch.flatten(result, start_dim=1) # ([32, D*4*4*4])
 
-        # Split the result into mu and var components
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
         log_var = self.fc_var(result)
 
         return [mu, log_var]
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         """

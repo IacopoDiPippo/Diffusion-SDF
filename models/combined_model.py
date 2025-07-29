@@ -4,7 +4,7 @@ import torch.utils.data
 from torch.nn import functional as F
 from bps import bps
 import pytorch_lightning as pl
-
+from bps import bps
 # add paths in model/__init__.py for new models
 from models import * 
 
@@ -23,7 +23,10 @@ class CombinedModel(pl.LightningModule):
             latent_std = specs.get("latent_std", 0.25) # std of target gaussian distribution of latent space
             hidden_dims = [modulation_dim, modulation_dim, modulation_dim, modulation_dim, modulation_dim]
             self.vae_model = BetaVAE(in_channels=3, latent_dim=feature_dim, hidden_dims=None, kl_std=latent_std)
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
         if self.task in ('combined', 'diffusion'):
             self.diffusion_model = DiffusionModel(model=DiffusionNet(**specs["diffusion_model_specs"]), **specs["diffusion_specs"]) 
  
@@ -72,6 +75,7 @@ class CombinedModel(pl.LightningModule):
         gt = x['gt_sdf'] # (B, N)
         pc = x['point_cloud'] # (B, 1024, 3)
 
+<<<<<<< Updated upstream
         
         base_points = self.get_base_points(pc) #Get (B, 32, 32, 32, 3)
 
@@ -79,6 +83,16 @@ class CombinedModel(pl.LightningModule):
         out = self.vae_model(base_points) # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
 
+=======
+        # STEP 1: obtain reconstructed plane feature and latent code 
+        base_points = self.get_base_points(pc) #Get (B, 32, 32, 32, 3)
+
+        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
+        out = self.vae_model(base_points) # out = [self.decode(z), input, mu, log_var, z]
+        reconstructed_base_point, latent = out[0], out[-1]
+
+        # STEP 2: pass recon back to GenSDF pipeline 
+>>>>>>> Stashed changes
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)  #TODO
         
         # STEP 3: losses for VAE and SDF
@@ -134,6 +148,31 @@ class CombinedModel(pl.LightningModule):
 
         return diff_loss
 
+    def get_base_points(self, pointcloud):
+        """Process point cloud through BPS, maintaining tensor output"""
+        # Convert to NumPy (detach if needed)
+        if isinstance(pointcloud, torch.Tensor):
+            pointcloud_np = pointcloud.detach().cpu().numpy()
+        else:
+            pointcloud_np = pointcloud
+        
+        # Process with NumPy BPS
+        x_norm_np = bps.normalize(pointcloud_np)
+        x_bps_grid_np = bps.encode(
+            x_norm_np, 
+            bps_arrangement='grid', 
+            n_bps_points=32**3, 
+            bps_cell_type='deltas'
+        )
+        
+        # Convert back to tensor (on original device)
+        x_bps_grid = torch.from_numpy(x_bps_grid_np).to(
+            device=pointcloud.device,
+            dtype=pointcloud.dtype
+        )
+        
+        return x_bps_grid.reshape([-1, 32, 32, 32, 3])
+    
     # the first half is the same as "train_sdf_modulation"
     # the reconstructed latent is used as input to the diffusion model, rather than loading latents from the dataloader as in "train_diffusion"
     def train_combined(self, x):
