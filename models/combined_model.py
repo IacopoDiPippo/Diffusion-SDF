@@ -83,6 +83,17 @@ class CombinedModel(pl.LightningModule):
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
+        
+        # Single debug call at the end
+        self.debug_shapes(
+            xyz=xyz,
+            gt=gt,
+            pc=pc,
+            base_points=base_points,
+            vae_output=out,
+            reconstructed_base_point=reconstructed_base_point,
+            latent=latent,
+        )
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
         
         # Single debug call at the end
