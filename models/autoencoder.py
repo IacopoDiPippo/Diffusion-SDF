@@ -40,10 +40,6 @@ class BetaVAE(nn.Module):
         modules = []
         if hidden_dims is None:
             hidden_dims = [32, 64, 128]
-<<<<<<< Updated upstream
-            
-=======
->>>>>>> Stashed changes
 
         self.hidden_dims = hidden_dims
 
@@ -52,11 +48,7 @@ class BetaVAE(nn.Module):
             modules.append(
                 nn.Sequential(
                     nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=2, padding=1),
-<<<<<<< Updated upstream
-                    nn.BatchNorm2d(h_dim),
-=======
                     nn.BatchNorm3d(h_dim),
->>>>>>> Stashed changes
                     nn.LeakyReLU())
             )
             in_channels = h_dim
@@ -69,11 +61,7 @@ class BetaVAE(nn.Module):
         # Build Decoder
         modules = []
 
-<<<<<<< Updated upstream
 
-        #print(self)
-=======
->>>>>>> Stashed changes
 
     def encode(self, enc_input: Tensor) -> List[Tensor]:
         """
@@ -92,10 +80,6 @@ class BetaVAE(nn.Module):
 
         return [mu, log_var]
 
-<<<<<<< Updated upstream
-=======
-
->>>>>>> Stashed changes
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         """

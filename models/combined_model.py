@@ -23,10 +23,6 @@ class CombinedModel(pl.LightningModule):
             latent_std = specs.get("latent_std", 0.25) # std of target gaussian distribution of latent space
             hidden_dims = [modulation_dim, modulation_dim, modulation_dim, modulation_dim, modulation_dim]
             self.vae_model = BetaVAE(in_channels=3, latent_dim=feature_dim, hidden_dims=None, kl_std=latent_std)
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
         if self.task in ('combined', 'diffusion'):
             self.diffusion_model = DiffusionModel(model=DiffusionNet(**specs["diffusion_model_specs"]), **specs["diffusion_specs"]) 
  
@@ -75,7 +71,6 @@ class CombinedModel(pl.LightningModule):
         gt = x['gt_sdf'] # (B, N)
         pc = x['point_cloud'] # (B, 1024, 3)
 
-<<<<<<< Updated upstream
         
         base_points = self.get_base_points(pc) #Get (B, 32, 32, 32, 3)
 
@@ -83,16 +78,6 @@ class CombinedModel(pl.LightningModule):
         out = self.vae_model(base_points) # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
 
-=======
-        # STEP 1: obtain reconstructed plane feature and latent code 
-        base_points = self.get_base_points(pc) #Get (B, 32, 32, 32, 3)
-
-        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
-        out = self.vae_model(base_points) # out = [self.decode(z), input, mu, log_var, z]
-        reconstructed_base_point, latent = out[0], out[-1]
-
-        # STEP 2: pass recon back to GenSDF pipeline 
->>>>>>> Stashed changes
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)  #TODO
         
         # STEP 3: losses for VAE and SDF
@@ -114,16 +99,6 @@ class CombinedModel(pl.LightningModule):
         return loss
 
 
-    def get_base_points(self, pointcloud):
-        x_norm = bps.normalize(pointcloud)
-
-        # option 2: encode with 32^3 grid basis and full vectors to nearest points as features
-        x_bps_grid = bps.encode(x_norm, bps_arrangement='grid', n_bps_points=32**3, bps_cell_type='deltas')
-        # the following tensor can be provided as input to any Conv3D network:
-        x_bps_grid = x_bps_grid.reshape([-1, 32, 32, 32, 3])
-
-        return x_bps_grid
-    
     def train_diffusion(self, x):
 
         self.train()

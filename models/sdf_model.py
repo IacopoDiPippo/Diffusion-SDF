@@ -29,10 +29,7 @@ class SdfModel(pl.LightningModule):
         self.latent_dim = model_specs["latent_dim"]
         self.skip_connection = model_specs.get("skip_connection", True)
         self.tanh_act = model_specs.get("tanh_act", False)
-<<<<<<< Updated upstream
-        
-=======
->>>>>>> Stashed changes
+
         self.model = SdfDecoder( hidden_dim=self.hidden_dim, skip_connection=self.skip_connection, tanh_act=self.tanh_act)
         
         self.model.train()
@@ -75,14 +72,9 @@ class SdfModel(pl.LightningModule):
         point_features = self.pointnet.forward_with_plane_features(plane_features, xyz) # point_features: B, N, D
         pred_sdf = self.model( torch.cat((xyz, point_features),dim=-1) )  
         return pred_sdf # [B, num_points] 
-<<<<<<< Updated upstream
+
 
     def forward_with_base_features(self, base_features, xyz):
         pred_sdf = self.model( torch.cat((xyz, base_features),dim=-1) )  
         return pred_sdf # [B, num_points] 
-=======
-    
-    def forward_with_base_features(self, base_features, xyz):
-        pred_sdf = self.model( torch.cat((xyz, base_features),dim=-1) )  
-        return pred_sdf # [B, num_points] 
->>>>>>> Stashed changes
+
