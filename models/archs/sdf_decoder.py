@@ -8,7 +8,7 @@ import numpy as np
 
 
 class SdfDecoder(nn.Module):
-    def __init__(self, latent_size=256, hidden_dim=512,
+    def __init__(self, latent_size=192, hidden_dim=512,
                  skip_connection=True, tanh_act=False,
                  geo_init=True, input_size=None
                  ):

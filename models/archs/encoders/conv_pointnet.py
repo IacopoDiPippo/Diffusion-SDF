@@ -24,7 +24,7 @@ class ConvPointnet(nn.Module):
     '''
 
     def __init__(self, c_dim=512, dim=3, hidden_dim=128, scatter_type='max', 
-                 unet=True, unet_kwargs={"depth": 4, "merge_mode": "concat", "start_filts": 32}, 
+                 unet=False, unet_kwargs={"depth": 4, "merge_mode": "concat", "start_filts": 32}, 
                  plane_resolution=64, plane_type=['xz', 'xy', 'yz'], padding=0.1, n_blocks=5,
                  inject_noise=False):
         super().__init__()
