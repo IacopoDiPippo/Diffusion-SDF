@@ -76,6 +76,10 @@ class SdfModel(pl.LightningModule):
 
     def forward_with_base_features(self, base_features, xyz):
         # Your original computation
+        # Expand base features to match point count
+        base_features = base_features.unsqueeze(1)  # [B, 1, D]
+        base_features = base_features.expand(-1, xyz.shape[1], -1)  # [B, N, D]
+        
         combined_input = torch.cat((xyz, base_features), dim=-1)
         pred_sdf = self.model(combined_input)  # [B, num_points]
         
