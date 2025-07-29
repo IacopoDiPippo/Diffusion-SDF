@@ -65,20 +65,39 @@ class CombinedModel(pl.LightningModule):
 
     #-----------different training steps for sdf modulation, diffusion, combined----------
 
+    def debug_shapes(**kwargs):
+        """Prints shapes/types of all provided variables. Call this at the end of your function."""
+        print("\n=== Debug Shapes ===")
+        for name, value in kwargs.items():
+            shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
+            dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
+            print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
+        print("==================\n")
+
     def train_modulation(self, x):
-
-        xyz = x['xyz'] # (B, N, 3)
-        gt = x['gt_sdf'] # (B, N)
-        pc = x['point_cloud'] # (B, 1024, 3)
-
+        xyz = x['xyz']  # (B, N, 3)
+        gt = x['gt_sdf']  # (B, N)
+        pc = x['point_cloud']  # (B, 1024, 3)
         
-        base_points = self.get_base_points(pc) #Get (B, 32, 32, 32, 3)
-
-        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
-        out = self.vae_model(base_points) # out = [self.decode(z), input, mu, log_var, z]
+        base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
+        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
+        out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
+        pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
+        
+        # Single debug call at the end
+        self.debug_shapes(
+            xyz=xyz,
+            gt=gt,
+            pc=pc,
+            base_points=base_points,
+            vae_output=out,
+            reconstructed_base_point=reconstructed_base_point,
+            latent=latent,
+            pred_sdf=pred_sdf
+        )
+        
 
-        pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)  #TODO
         
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss

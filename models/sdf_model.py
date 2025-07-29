@@ -75,6 +75,25 @@ class SdfModel(pl.LightningModule):
 
 
     def forward_with_base_features(self, base_features, xyz):
-        pred_sdf = self.model( torch.cat((xyz, base_features),dim=-1) )  
-        return pred_sdf # [B, num_points] 
+        # Your original computation
+        combined_input = torch.cat((xyz, base_features), dim=-1)
+        pred_sdf = self.model(combined_input)  # [B, num_points]
+        
+        # Single debug call at the end (can be easily removed)
+        self.debug_shapes(
+            xyz=xyz,
+            base_features=base_features,
+            combined_input=combined_input,
+            pred_sdf=pred_sdf
+        )
+        
+        return pred_sdf
 
+    def debug_shapes(**kwargs):
+        """Prints shapes/types of all provided variables. Call this at the end of your function."""
+        print("\n=== Debug Shapes ===")
+        for name, value in kwargs.items():
+            shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
+            dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
+            print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
+        print("==================\n")
