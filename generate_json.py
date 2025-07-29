@@ -27,7 +27,7 @@ def generate_shapenet_json(shapenet_dir, output_json, target_class):
     # Scan the ShapeNet directory for models of the target class
     class_dir = os.path.join(shapenet_dir, acronym)
     if not os.path.exists(class_dir):
-        raise FileNotFoundError(f"Directory for class '{target_class}' ({acronym}) not found in {shapenet_dir}.")
+        raise FileNotFoundError(f"Directory for class '{target_class}' ({acronym}) not found in {shapenet_dir}, {class_dir}.")
 
     model_ids = [
         model_id for model_id in os.listdir(class_dir)
