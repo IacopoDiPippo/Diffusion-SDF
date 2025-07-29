@@ -72,7 +72,8 @@ class BetaVAE(nn.Module):
         """
         result = enc_input
         result = self.encoder(enc_input)  # [B, D, 4, 4, 4]
-        result = torch.flatten(result, start_dim=1) # ([32, D*4*4*4])
+        self.debug_shapes(enc_input = enc_input, result = result)
+        result = torch.flatten(result, start_dim=1) # ([B, D*4*4*4])
 
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
@@ -80,6 +81,14 @@ class BetaVAE(nn.Module):
 
         return [mu, log_var]
 
+    def debug_shapes(self,**kwargs):
+        """Prints shapes/types of all provided variables. Call this at the end of your function."""
+        print("\n=== Debug Shapes ===")
+        for name, value in kwargs.items():
+            shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
+            dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
+            print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
+        print("==================\n")
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         """
