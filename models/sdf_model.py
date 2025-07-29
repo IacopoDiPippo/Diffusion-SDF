@@ -30,7 +30,7 @@ class SdfModel(pl.LightningModule):
         self.skip_connection = model_specs.get("skip_connection", True)
         self.tanh_act = model_specs.get("tanh_act", False)
 
-        self.model = SdfDecoder( hidden_dim=self.hidden_dim, skip_connection=self.skip_connection, tanh_act=self.tanh_act)
+        self.model = SdfDecoder( hidden_dim=self.hidden_dim, skip_connection=self.skip_connection, tanh_act=self.tanh_act, latent_size= self.latent_dim)
         
         self.model.train()
         #print(self.model)

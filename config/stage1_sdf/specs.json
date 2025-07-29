@@ -8,8 +8,8 @@
     "training_task": "modulation",
   
     "SdfModelSpecs" : {
-      "hidden_dim" : 256,
-      "latent_dim" : 128,
+      "hidden_dim" : 600,
+      "latent_dim" : 256,
       "num_layers" : 3
     },
 
