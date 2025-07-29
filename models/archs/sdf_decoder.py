@@ -90,7 +90,7 @@ class SdfDecoder(nn.Module):
 
         return out
     
-    def debug_shapes(**kwargs):
+    def debug_shapes(self,**kwargs):
         """Prints shapes/types of all provided variables. Call this at the end of your function."""
         print("\n=== Debug Shapes ===")
         for name, value in kwargs.items():
