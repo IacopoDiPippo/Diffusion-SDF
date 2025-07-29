@@ -60,7 +60,7 @@ class SdfDecoder(nn.Module):
                 if isinstance(m, nn.Linear):
                     init.normal_(m.weight, mean=0.0, std=np.sqrt(2) / np.sqrt(hidden_dim))
                     init.constant_(m.bias, 0.0)
-                    
+
     def forward(self, x):
         '''
         x: concatenated xyz and shape features, shape: B, N, D+3 
@@ -80,7 +80,7 @@ class SdfDecoder(nn.Module):
             out = nn.Tanh()(out)
 
         # Single debug call at the end
-        debug_shapes(
+        self.debug_shapes(
             input=x,
             block1_out=block1_out,
             block2_in=block2_in,
