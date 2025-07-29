@@ -5,3 +5,4 @@ data/acronym/Mug
 data/grid_data/acronym/Mug
 config/stage1_sdf/code
 tensorboard_logs/
+shapenet_downlaod
