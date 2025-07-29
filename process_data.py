@@ -4,164 +4,119 @@ import trimesh
 import point_cloud_utils as pcu
 from tqdm import tqdm
 
+# Constants
+SHAPENET_MUG_CATEGORY = "03797390"  # Official ShapeNet category ID for Mugs
+MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
+
 def make_watertight_with_pcu(mesh_path):
-    """
-    Create watertight mesh using point-cloud-utils
-    Handles both single meshes and scenes
-    Returns watertight vertices and faces
-    """
-    # Load mesh and handle scene objects
-    mesh = trimesh.load(mesh_path, force='mesh')  # force loading as mesh
-    
-    # If we got a scene, combine all meshes into one
+    """Create watertight mesh using point-cloud-utils"""
+    mesh = trimesh.load(mesh_path, force='mesh')
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
-    
-    # Now we should have a Trimesh object
     if not isinstance(mesh, trimesh.Trimesh):
         raise ValueError("Input could not be converted to a single mesh")
-    
-    # Get vertices and faces
-    verts = mesh.vertices
-    faces = mesh.faces
-    
-    # Create watertight mesh - now passing both vertices and faces
-    verts, faces = pcu.make_mesh_watertight(verts, faces, resolution=20000)
+    verts, faces = pcu.make_mesh_watertight(mesh.vertices, mesh.faces, resolution=20000)
     return verts, faces
 
-def sample_on_surface(mesh, num_points=100000):
-    """
-    Sample points directly on the mesh surface using trimesh
-    """
-    points, _ = trimesh.sample.sample_surface(mesh, num_points)
-    return points
+def normalize_mesh(verts):
+    """Normalize vertices to fit in unit cube centered at origin"""
+    verts = verts - np.mean(verts, axis=0)
+    scale = 1.0 / np.max(np.ptp(verts, axis=0))
+    return verts * scale
 
-def sample_uniform_grid(num_points=100000, bounds=(-1, 1)):
-    """
-    Sample points uniformly in the 3D grid space
-    """
-    return np.random.uniform(low=bounds[0], high=bounds[1], 
-                           size=(num_points, 3))
+def sample_on_surface(mesh, num_points):
+    """Sample points on mesh surface"""
+    return trimesh.sample.sample_surface(mesh, num_points)[0]
+
+def sample_uniform_grid(num_points):
+    """Sample points in uniform 3D grid"""
+    return np.random.uniform(-1, 1, size=(num_points, 3))
 
 def compute_signed_distance(verts, faces, points):
-    """
-    Compute signed distance using point-cloud-utils
-    """
-    sdf, _, _ = pcu.signed_distance_to_mesh(points, verts, faces)
-    return sdf
+    """Compute signed distance for points"""
+    return pcu.signed_distance_to_mesh(points, verts, faces)[0]
 
-def normalize_mesh(verts):
-    """
-    Normalize vertices to fit in unit cube centered at origin
-    """
-    # Center the mesh
-    verts = verts - np.mean(verts, axis=0)
-    
-    # Scale to fit in [-1, 1] cube
-    scale = 1.0 / np.max(np.ptp(verts, axis=0))
-    verts = verts * scale
-    return verts
-
-def process_mesh(mesh_path, output_dir, num_surface_points=70000, num_grid_points=30000):
-    """
-    Process a single mesh and save results in the specified output directory
-    """
-    # Create output directories
+def save_samples(output_dir, filename, points, distances):
+    """Save sampled points with distances to CSV"""
     os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, filename)
+    np.savetxt(path, np.hstack([points, distances.reshape(-1, 1)]), delimiter=',')
+    return path
+
+def process_single_model(obj_path, surface_output_dir, grid_output_dir):
+    """Process a single model and save both surface and grid samples"""
+    # Skip if both outputs exist
+    obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
+    surface_csv = os.path.join(surface_output_dir, "sdf_data.csv")
+    grid_csv = os.path.join(grid_output_dir, "grid_gt.csv")
     
-    # Define output paths
-    surface_csv_path = os.path.join(output_dir, "sdf_data.csv")
-    grid_csv_path = os.path.join(output_dir, "grid_gt.csv")
-    
-    if os.path.exists(surface_csv_path) and os.path.exists(grid_csv_path):
+    if os.path.exists(surface_csv) and os.path.exists(grid_csv):
         return "skipped"
     
     try:
-        # Create watertight version using pcu
-        verts, faces = make_watertight_with_pcu(mesh_path)
+        # Process mesh
+        verts, faces = make_watertight_with_pcu(obj_path)
         verts = normalize_mesh(verts)
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
         
-        # Create trimesh object from watertight mesh
-        watertight_mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-
-        # Sample points on surface and compute SDF
-        surface_points = sample_on_surface(watertight_mesh, num_surface_points)
-        surface_distances = compute_signed_distance(verts, faces, surface_points)
+        # Generate and save surface samples
+        surface_points = sample_on_surface(mesh, 7000)
+        surface_sdf = compute_signed_distance(verts, faces, surface_points)
+        save_samples(surface_output_dir, "sdf_data.csv", surface_points, surface_sdf)
         
-        # Sample uniform grid points and compute SDF
-        grid_points = sample_uniform_grid(num_grid_points)
-        grid_distances = compute_signed_distance(verts, faces, grid_points)
-        
-        # Combine points and distances
-        surface_data = np.hstack([surface_points, surface_distances.reshape(-1, 1)])
-        grid_data = np.hstack([grid_points, grid_distances.reshape(-1, 1)])
-        
-        # Save the data
-        np.savetxt(surface_csv_path, surface_data, delimiter=',', comments="")
-        np.savetxt(grid_csv_path, grid_data, delimiter=',', comments="")
-        
-        print(f"Successfully processed {mesh_path}")
-        print(f"  Output saved to {output_dir}")
+        # Generate and save grid samples
+        grid_points = sample_uniform_grid(3000)
+        grid_sdf = compute_signed_distance(verts, faces, grid_points)
+        save_samples(grid_output_dir, "grid_gt.csv", grid_points, grid_sdf)
         
         return "success"
     except Exception as e:
-        print(f"Failed to process {mesh_path}: {str(e)}")
+        print(f"Error processing {obj_id}: {str(e)}")
         return "failed"
 
-def process_shapenet_mugs(input_base_dir, output_base_dir):
-    """
-    Process all Mug models from ShapeNet and organize them in data/acronym/Mug structure
-    """
-    # Suppress trimesh material warnings
-    import logging
-    logging.getLogger('trimesh').setLevel(logging.ERROR)
+def process_all_mugs(shapenet_root, acronym_output, grid_output):
+    """Process all Mug models from ShapeNet"""
+    mug_dir = os.path.join(shapenet_root, SHAPENET_MUG_CATEGORY)
     
-    # Define ShapeNet directory structure for Mugs
-    mug_category_id = "03797390"  # ShapeNet category ID for Mugs
-    shapenet_mug_dir = os.path.join(input_base_dir, mug_category_id)
+    if not os.path.exists(mug_dir):
+        raise FileNotFoundError(f"Mug category directory not found at {mug_dir}")
     
-    if not os.path.exists(shapenet_mug_dir):
-        raise FileNotFoundError(f"ShapeNet Mug directory not found at {shapenet_mug_dir}")
-    
-    # Get all Mug models
-    mug_models = [d for d in os.listdir(shapenet_mug_dir) 
-                 if os.path.isdir(os.path.join(shapenet_mug_dir, d))]
+    model_ids = [d for d in os.listdir(mug_dir) 
+               if os.path.isdir(os.path.join(mug_dir, d))]
     
     stats = {"success": 0, "skipped": 0, "failed": 0}
     
-    print(f"\nProcessing {len(mug_models)} Mug models...")
-    
-    for model_id in tqdm(mug_models, desc="Processing Mugs", unit="model"):
-        # Define input and output paths
-        input_obj_path = os.path.join(shapenet_mug_dir, model_id, "model.obj")
-        output_dir = os.path.join(output_base_dir, "Mug", model_id)
+    print(f"Processing {len(model_ids)} Mug models...")
+    for obj_id in tqdm(model_ids, desc="Mug Models"):
+        obj_path = os.path.join(mug_dir, obj_id, MODEL_FILE_PATH)
         
-        # Skip if the OBJ file doesn't exist
-        if not os.path.exists(input_obj_path):
-            print(f"Model.obj not found for {model_id}, skipping")
+        # Skip if model doesn't exist
+        if not os.path.exists(obj_path):
             stats["failed"] += 1
             continue
+            
+        # Set up output directories
+        surface_dir = os.path.join(acronym_output, "Mug", obj_id)
+        grid_dir = os.path.join(grid_output, "acronym", "Mug", obj_id)
         
         # Process the model
-        result = process_mesh(input_obj_path, output_dir)
+        result = process_single_model(obj_path, surface_dir, grid_dir)
         stats[result] += 1
-
-    print(f"\nResults: {stats['success']} succeeded, {stats['skipped']} skipped, {stats['failed']} failed")
+    
+    print("\nProcessing Results:")
+    print(f"Successful: {stats['success']}")
+    print(f"Skipped:    {stats['skipped']}")
+    print(f"Failed:     {stats['failed']}")
 
 if __name__ == "__main__":
-    # Check for pcu installation
-    try:
-        import point_cloud_utils
-    except ImportError:
-        raise ImportError(
-            "point-cloud-utils required. Install with:\n"
-            "pip install point-cloud-utils\n"
-            "Note: On Linux you may need to install libomp-dev first"
-        )
+    # Configure paths
+    SHAPENET_ROOT = "shapenet_download/ShapeNetCore.v2"  # Root of ShapeNet dataset
+    ACRONYM_OUTPUT = "data/acronym"  # For surface samples
+    GRID_OUTPUT = "data/grid_data"    # For grid samples
     
-    # Define directories
-    shapenet_base_dir = "shapenet_download"  # Base directory where ShapeNet is downloaded
-    acronym_output_dir = "data/acronym"      # Output directory for Acronym dataset structure
+    # Create output directories
+    os.makedirs(os.path.join(ACRONYM_OUTPUT, "Mug"), exist_ok=True)
+    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "Mug"), exist_ok=True)
     
-    # Process all Mug models
-    process_shapenet_mugs(shapenet_base_dir, acronym_output_dir)
+    # Run processing
+    process_all_mugs(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
