@@ -62,84 +62,88 @@ def normalize_mesh(verts):
     verts = verts * scale
     return verts
 
-def process_mesh(mesh_path, output_surface_dir, output_grid_dir, 
-                num_surface_points=70000, num_grid_points=30000):
+def process_mesh(mesh_path, output_dir, num_surface_points=70000, num_grid_points=30000):
     """
-    Process a single mesh with cleaner output naming
+    Process a single mesh and save results in the specified output directory
     """
-
-    # Skip if both outputs already exist
-    obj_id = os.path.splitext(os.path.basename(mesh_path))[0].replace("model_normalized_", "")
-    surface_csv_path = os.path.join(output_surface_dir, "sdf_data.csv")
-    grid_csv_path = os.path.join(output_grid_dir, "grid_gt.csv")
+    # Create output directories
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Define output paths
+    surface_csv_path = os.path.join(output_dir, "sdf_data.csv")
+    grid_csv_path = os.path.join(output_dir, "grid_gt.csv")
     
     if os.path.exists(surface_csv_path) and os.path.exists(grid_csv_path):
         return "skipped"
     
-    # Create watertight version using pcu
-    verts, faces = make_watertight_with_pcu(mesh_path)
-    verts = normalize_mesh(verts)
-    
-    # Create output directories
-    os.makedirs(output_surface_dir, exist_ok=True)
-    os.makedirs(output_grid_dir, exist_ok=True)
-    
-    # Get base filename
-    obj_id = os.path.splitext(os.path.basename(mesh_path))[0]
-    
-    # Create trimesh object from watertight mesh
-    watertight_mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-
-    # Sample points on surface and compute SDF
-    surface_points = sample_on_surface(watertight_mesh, num_surface_points)
-    surface_distances = compute_signed_distance(verts, faces, surface_points)
-    
-    # Sample uniform grid points and compute SDF
-    grid_points = sample_uniform_grid(num_grid_points)
-    grid_distances = compute_signed_distance(verts, faces, grid_points)
-    
-    # Combine points and distances
-    surface_data = np.hstack([surface_points, surface_distances.reshape(-1, 1)])
-    grid_data = np.hstack([grid_points, grid_distances.reshape(-1, 1)])
-    
-    
-    np.savetxt(surface_csv_path, surface_data, delimiter=',', 
-                header="x,y,z,sdf", comments="")
-    np.savetxt(grid_csv_path, grid_data, delimiter=',', 
-                header="x,y,z,sdf", comments="")
-    
-    print(f"Successfully processed {mesh_path}")
-    print(f"  Surface samples: {surface_csv_path}")
-    print(f"  Grid samples: {grid_csv_path}")
+    try:
+        # Create watertight version using pcu
+        verts, faces = make_watertight_with_pcu(mesh_path)
+        verts = normalize_mesh(verts)
         
-    
-    return "success"
+        # Create trimesh object from watertight mesh
+        watertight_mesh = trimesh.Trimesh(vertices=verts, faces=faces)
 
-def process_all_meshes(input_dir, output_surface_base, output_grid_base):
+        # Sample points on surface and compute SDF
+        surface_points = sample_on_surface(watertight_mesh, num_surface_points)
+        surface_distances = compute_signed_distance(verts, faces, surface_points)
+        
+        # Sample uniform grid points and compute SDF
+        grid_points = sample_uniform_grid(num_grid_points)
+        grid_distances = compute_signed_distance(verts, faces, grid_points)
+        
+        # Combine points and distances
+        surface_data = np.hstack([surface_points, surface_distances.reshape(-1, 1)])
+        grid_data = np.hstack([grid_points, grid_distances.reshape(-1, 1)])
+        
+        # Save the data
+        np.savetxt(surface_csv_path, surface_data, delimiter=',', comments="")
+        np.savetxt(grid_csv_path, grid_data, delimiter=',', comments="")
+        
+        print(f"Successfully processed {mesh_path}")
+        print(f"  Output saved to {output_dir}")
+        
+        return "success"
+    except Exception as e:
+        print(f"Failed to process {mesh_path}: {str(e)}")
+        return "failed"
+
+def process_shapenet_mugs(input_base_dir, output_base_dir):
     """
-    Cleaner processing with proper output naming and warning suppression
+    Process all Mug models from ShapeNet and organize them in data/acronym/Mug structure
     """
     # Suppress trimesh material warnings
     import logging
     logging.getLogger('trimesh').setLevel(logging.ERROR)
     
-    obj_files = [f for f in os.listdir(input_dir) if f.endswith('.obj')]
+    # Define ShapeNet directory structure for Mugs
+    mug_category_id = "03797390"  # ShapeNet category ID for Mugs
+    shapenet_mug_dir = os.path.join(input_base_dir, mug_category_id)
+    
+    if not os.path.exists(shapenet_mug_dir):
+        raise FileNotFoundError(f"ShapeNet Mug directory not found at {shapenet_mug_dir}")
+    
+    # Get all Mug models
+    mug_models = [d for d in os.listdir(shapenet_mug_dir) 
+                 if os.path.isdir(os.path.join(shapenet_mug_dir, d))]
+    
     stats = {"success": 0, "skipped": 0, "failed": 0}
-    category = "Mug"
     
-    print(f"\nProcessing {len(obj_files)} meshes...")
+    print(f"\nProcessing {len(mug_models)} Mug models...")
     
-    for obj_file in tqdm(obj_files, desc="Processing", unit="mesh"):
-        obj_id = obj_file.replace("model_normalized_", "").replace(".obj", "")
-        mesh_path = os.path.join(input_dir, obj_file)
-        print(f"Mesh_path = {mesh_path}")
-        output_surface_dir = os.path.join(output_surface_base, category, obj_id)
-        output_grid_dir = os.path.join(output_grid_base, category, obj_id)
+    for model_id in tqdm(mug_models, desc="Processing Mugs", unit="model"):
+        # Define input and output paths
+        input_obj_path = os.path.join(shapenet_mug_dir, model_id, "model.obj")
+        output_dir = os.path.join(output_base_dir, "Mug", model_id)
         
-        os.makedirs(output_surface_dir, exist_ok=True)
-        os.makedirs(output_grid_dir, exist_ok=True)
+        # Skip if the OBJ file doesn't exist
+        if not os.path.exists(input_obj_path):
+            print(f"Model.obj not found for {model_id}, skipping")
+            stats["failed"] += 1
+            continue
         
-        result = process_mesh(mesh_path, output_surface_dir, output_grid_dir)
+        # Process the model
+        result = process_mesh(input_obj_path, output_dir)
         stats[result] += 1
 
     print(f"\nResults: {stats['success']} succeeded, {stats['skipped']} skipped, {stats['failed']} failed")
@@ -155,8 +159,9 @@ if __name__ == "__main__":
             "Note: On Linux you may need to install libomp-dev first"
         )
     
-    input_dir = "all_models_renamed"
-    output_surface_base = "data/acronym"
-    output_grid_base = "data/grid_data/acronym"
+    # Define directories
+    shapenet_base_dir = "shapenet_download"  # Base directory where ShapeNet is downloaded
+    acronym_output_dir = "data/acronym"      # Output directory for Acronym dataset structure
     
-    process_all_meshes(input_dir, output_surface_base, output_grid_base)
+    # Process all Mug models
+    process_shapenet_mugs(shapenet_base_dir, acronym_output_dir)
