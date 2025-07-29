@@ -49,7 +49,7 @@ def generate_shapenet_json(shapenet_dir, output_json, target_class):
 
 if __name__ == "__main__":
     # Example usage
-    shapenet_dir = "/shapenet_download/ShapeNetCore.v2"  # Update this path!
+    shapenet_dir = "/home/iacopo/Diffusion-SDF/shapenet_download/ShapeNetCore.v2"
     output_json = "mug_all.json"         # Output filename
     target_class = "Mug"                       # Change to "Couch", "Chair", etc.
 
