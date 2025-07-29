@@ -26,8 +26,9 @@ def generate_shapenet_json(shapenet_dir, output_json, target_class):
 
     # Scan the ShapeNet directory for models of the target class
     class_dir = os.path.join(shapenet_dir, acronym)
+    print(f"Path is {class_dir}")
     if not os.path.exists(class_dir):
-        raise FileNotFoundError(f"Directory for class '{target_class}' ({acronym}) not found in {shapenet_dir}, {class_dir}.")
+        raise FileNotFoundError(f"Directory for class '{target_class}' ({acronym}) not found in {shapenet_dir}.")
 
     model_ids = [
         model_id for model_id in os.listdir(class_dir)
@@ -49,7 +50,7 @@ def generate_shapenet_json(shapenet_dir, output_json, target_class):
 
 if __name__ == "__main__":
     # Example usage
-    shapenet_dir = "/home/iacopo/Diffusion-SDF/shapenet_download/ShapeNetCore.v2"
+    shapenet_dir = "/shapenet_download/ShapeNetCore.v2"  # Update this path!
     output_json = "mug_all.json"         # Output filename
     target_class = "Mug"                       # Change to "Couch", "Chair", etc.
 
