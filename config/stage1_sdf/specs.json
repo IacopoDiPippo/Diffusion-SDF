@@ -2,8 +2,8 @@
     "Description" : "training joint SDF-VAE model for modulating SDFs on the couch dataset",
     "DataSource" : "data",
     "GridSource" : "data/grid_data",
-    "TrainSplit" : "data/splits/mug_1.json",
-    "TestSplit" : "data/splits/mug_1.json",
+    "TrainSplit" : "data/splits/mug_all.json",
+    "TestSplit" : "data/splits/mug_all.json",
     
     "training_task": "modulation",
   
@@ -16,8 +16,8 @@
     "SampPerMesh" : 1600,
     "PCsize" : 1024,
   
-    "num_epochs" : 10,
-    "log_freq" : 5,
+    "num_epochs" : 1000,
+    "log_freq" : 10,
     "kld_weight" : 1e-5,
     "latent_std" : 0.25,
   
