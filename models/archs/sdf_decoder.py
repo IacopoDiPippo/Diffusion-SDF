@@ -91,10 +91,11 @@ class SdfDecoder(nn.Module):
         return out
     
     def debug_shapes(self,**kwargs):
-        """Prints shapes/types of all provided variables. Call this at the end of your function."""
-        print("\n=== Debug Shapes ===")
-        for name, value in kwargs.items():
-            shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
-            dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
-            print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
-        print("==================\n")
+        if False:
+            """Prints shapes/types of all provided variables. Call this at the end of your function."""
+            print("\n=== Debug Shapes ===")
+            for name, value in kwargs.items():
+                shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
+                dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
+                print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
+            print("==================\n")

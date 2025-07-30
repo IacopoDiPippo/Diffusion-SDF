@@ -19,7 +19,7 @@ class CombinedModel(pl.LightningModule):
             self.sdf_model = SdfModel(specs=specs) 
 
             feature_dim = specs["SdfModelSpecs"]["latent_dim"] # latent dim of pointnet 
-            modulation_dim = feature_dim*3 # latent dim of modulation
+            modulation_dim = feature_dim # latent dim of modulation
             latent_std = specs.get("latent_std", 0.25) # std of target gaussian distribution of latent space
             hidden_dims = [modulation_dim, modulation_dim, modulation_dim, modulation_dim, modulation_dim]
             self.vae_model = BetaVAE(in_channels=3, latent_dim=feature_dim, hidden_dims=None, kl_std=latent_std)
@@ -67,12 +67,13 @@ class CombinedModel(pl.LightningModule):
 
     def debug_shapes(self,**kwargs):
         """Prints shapes/types of all provided variables. Call this at the end of your function."""
-        print("\n=== Debug Shapes ===")
-        for name, value in kwargs.items():
-            shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
-            dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
-            print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
-        print("==================\n")
+        if False:
+            print("\n=== Debug Shapes ===")
+            for name, value in kwargs.items():
+                shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
+                dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
+                print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
+            print("==================\n")
 
     def train_modulation(self, x):
         xyz = x['xyz']  # (B, N, 3)

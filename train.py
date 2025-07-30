@@ -6,6 +6,7 @@ from torch.nn import functional as F
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.loggers import TensorBoardLogger
 
 import os
 import json, csv
@@ -76,9 +77,21 @@ def train():
     else:
         resume = None  
 
-    # precision 16 can be unstable (nan loss); recommend using 32
-    trainer = pl.Trainer(accelerator='gpu', devices=-1, precision=32, max_epochs=specs["num_epochs"], callbacks=callbacks, log_every_n_steps=1,
-                        default_root_dir=os.path.join("tensorboard_logs", args.exp_dir))
+    tb_logger = TensorBoardLogger(
+        save_dir=os.path.join("tensorboard_logs", args.exp_dir),
+        name="logs"
+    )
+
+    trainer = pl.Trainer(
+        accelerator='gpu',
+        devices=-1,
+        precision=32,
+        max_epochs=specs["num_epochs"],
+        callbacks=callbacks,
+        log_every_n_steps=1,
+        logger=tb_logger,
+        default_root_dir=os.path.join("tensorboard_logs", args.exp_dir)
+    )
     trainer.fit(model=model, train_dataloaders=train_dataloader, ckpt_path=resume)
 
     
