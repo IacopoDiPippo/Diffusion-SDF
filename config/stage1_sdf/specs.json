@@ -16,12 +16,12 @@
     "SampPerMesh" : 1600,
     "PCsize" : 1024,
   
-    "num_epochs" : 1000,
-    "log_freq" : 10,
+    "num_epochs" : 100,
+    "log_freq" : 2,
     "kld_weight" : 1e-5,
     "latent_std" : 0.25,
   
-    "sdf_lr" : 1e-4
+    "sdf_lr" : 5e-4
 }
   
   
