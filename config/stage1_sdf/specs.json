@@ -9,14 +9,14 @@
   
     "SdfModelSpecs" : {
       "hidden_dim" : 600,
-      "latent_dim" : 256,
-      "num_layers" : 3
+      "latent_dim" : 512,
+      "num_layers" : 5
     },
 
     "SampPerMesh" : 1600,
     "PCsize" : 1024,
   
-    "num_epochs" : 100,
+    "num_epochs" : 300,
     "log_freq" : 2,
     "kld_weight" : 1e-5,
     "latent_std" : 0.25,
