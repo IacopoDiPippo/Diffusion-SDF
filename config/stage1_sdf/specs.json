@@ -21,7 +21,7 @@
     "kld_weight" : 1e-5,
     "latent_std" : 0.25,
   
-    "sdf_lr" : 5e-4
+    "sdf_lr" : 1e-4
 }
   
   
