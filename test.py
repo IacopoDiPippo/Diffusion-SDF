@@ -126,7 +126,7 @@ def test_generation():
         plane_features = model.vae_model.decode(samples)
         for i in range(len(plane_features)):
             plane_feature = plane_features[i].unsqueeze(0)
-            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=128, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=32, max_batch=2**21, from_plane_features=True)
             
     else:
         # load dataset, dataloader, model checkpoint
