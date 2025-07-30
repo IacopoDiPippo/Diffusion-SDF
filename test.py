@@ -64,7 +64,7 @@ def test_modulations():
 
             #print("mesh filename: ", mesh_filename)
             # N is the grid resolution for marching cubes; set max_batch to largest number gpu can hold
-            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=256, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=128, max_batch=2**21, from_plane_features=True)
 
             # load the created mesh (mesh_filename), and compare with input point cloud
             # to calculate and log chamfer distance 
