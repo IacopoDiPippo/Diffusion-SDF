@@ -129,7 +129,7 @@ class CombinedModel(pl.LightningModule):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
         pc = x['point_cloud']  # (B, 1024, 3)
-        
+        print("Input checksum:", torch.sum(pc))
         base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
