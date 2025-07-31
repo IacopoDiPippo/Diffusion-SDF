@@ -54,6 +54,10 @@ def test_modulations():
             os.makedirs(outdir, exist_ok=True)
             mesh_filename = os.path.join(outdir, "reconstruct")
             
+            # Save the input point cloud for reference as ground truth
+            gt_save_path = os.path.join(outdir, "groundtruth.xyz")
+            np.savetxt(gt_save_path, point_cloud.squeeze(0).cpu().numpy())
+
             # given point cloud, create modulations (e.g. 1D latent vectors)
             base_points = model.get_base_points(point_cloud.cuda()) #Get (B, 32, 32, 32, 3)
 
