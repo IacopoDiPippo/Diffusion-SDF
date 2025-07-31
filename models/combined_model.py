@@ -206,34 +206,34 @@ class CombinedModel(pl.LightningModule):
 
         return diff_loss
 
-    def _create_bps_grid(self, n_points=32**3):
+    def _create_bps_grid(self, grid_size=32, radius=1.5):
         """Create a fixed BPS reference grid."""
-        # Sample random fixed basis (or use 'grid' or 'sphere')
         bps_grid_np = bps.generate_grid_basis(
-            grid_size=32,
+            grid_size=grid_size,
             n_dims=3,
-            minv=-1.5,
-            maxv=1.5
+            minv=-radius,
+            maxv=radius
         )
         return torch.from_numpy(bps_grid_np).float().to(self.device)
 
     def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
         """Process a point cloud with fixed BPS basis grid."""
-        if pointcloud.ndim == 3:
+        if pointcloud.ndim == 3 and pointcloud.shape[0] == 1:
             pointcloud = pointcloud.squeeze(0)  # shape (N, 3)
 
         pointcloud_np = pointcloud.detach().cpu().numpy()
-        pc_normalized = bps.normalize(pointcloud_np)
+        pc_normalized = bps.normalize(pointcloud_np[None, ...])[0]  # add batch dim and remove it after
 
-        # Encode with fixed basis grid
-        x_bps = bps.encode_with_basis(
-            pc_normalized,
-            self.bps_grid.cpu().numpy(),  # ensure NumPy input
-            bps_cell_type='deltas'
-        )  # shape: (n_bps_points, 3)
+        x_bps = bps.encode(
+            pc_normalized[None, ...],  # batch dim = 1
+            bps_arrangement='custom',
+            custom_basis=self.bps_grid.cpu().numpy(),
+            bps_cell_type='deltas',
+            n_jobs=1
+        )[0]  # remove batch dim
 
-        x_bps_tensor = torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype)
-        return x_bps_tensor.reshape(32, 32, 32, 3)
+        return torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype).reshape(32, 32, 32, 3)
+
     
     # the first half is the same as "train_sdf_modulation"
     # the reconstructed latent is used as input to the diffusion model, rather than loading latents from the dataloader as in "train_diffusion"
