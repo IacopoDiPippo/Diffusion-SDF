@@ -139,7 +139,7 @@ class CombinedModel(pl.LightningModule):
         print("BPS grid min/max:", self.bps_grid.min(), self.bps_grid.max())
         print("BPS grid checksum:", torch.sum(self.bps_grid))      # Should be constant
         print("Base_points", base_points.shape)
-
+        print("BAsepoints:", torch.sum(base_points)) 
 
         # Single debug call at the end
         self.debug_shapes(
