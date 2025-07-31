@@ -5,7 +5,7 @@ import point_cloud_utils as pcu
 from tqdm import tqdm
 
 # Constants
-SHAPENET_Airplane_CATEGORY = "02691156"  # Official ShapeNet category ID for Airplanes
+SHAPENET_mug_CATEGORY = "02691156"  # Official ShapeNet category ID for mugs
 MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
 
 def make_watertight_with_pcu(mesh_path):
@@ -61,7 +61,7 @@ def process_single_model(obj_path, surface_output_dir, grid_output_dir):
         
         # Generate and save surface samples
         surface_points = sample_on_surface(mesh, 7000)
-        surface_sdf = compute_signed_distance(verts, faces, surface_points)
+        surface_sdf = 0
         save_samples(surface_output_dir, "sdf_data.csv", surface_points, surface_sdf)
         
         # Generate and save grid samples
@@ -74,21 +74,21 @@ def process_single_model(obj_path, surface_output_dir, grid_output_dir):
         print(f"Error processing {obj_id}: {str(e)}")
         return "failed"
 
-def process_all_Airplanes(shapenet_root, acronym_output, grid_output):
-    """Process all Airplane models from ShapeNet"""
-    Airplane_dir = os.path.join(shapenet_root, SHAPENET_Airplane_CATEGORY)
+def process_all_mugs(shapenet_root, acronym_output, grid_output):
+    """Process all mug models from ShapeNet"""
+    mug_dir = os.path.join(shapenet_root, SHAPENET_mug_CATEGORY)
     
-    if not os.path.exists(Airplane_dir):
-        raise FileNotFoundError(f"Airplane category directory not found at {Airplane_dir}")
+    if not os.path.exists(mug_dir):
+        raise FileNotFoundError(f"mug category directory not found at {mug_dir}")
     
-    model_ids = [d for d in os.listdir(Airplane_dir) 
-               if os.path.isdir(os.path.join(Airplane_dir, d))]
+    model_ids = [d for d in os.listdir(mug_dir) 
+               if os.path.isdir(os.path.join(mug_dir, d))]
     
     stats = {"success": 0, "skipped": 0, "failed": 0}
     
-    print(f"Processing {len(model_ids)} Airplane models...")
-    for obj_id in tqdm(model_ids, desc="Airplane Models"):
-        obj_path = os.path.join(Airplane_dir, obj_id, MODEL_FILE_PATH)
+    print(f"Processing {len(model_ids)} mug models...")
+    for obj_id in tqdm(model_ids, desc="mug Models"):
+        obj_path = os.path.join(mug_dir, obj_id, MODEL_FILE_PATH)
         
         # Skip if model doesn't exist
         if not os.path.exists(obj_path):
@@ -96,8 +96,8 @@ def process_all_Airplanes(shapenet_root, acronym_output, grid_output):
             continue
             
         # Set up output directories
-        surface_dir = os.path.join(acronym_output, "Airplane", obj_id)
-        grid_dir = os.path.join(grid_output, "acronym", "Airplane", obj_id)
+        surface_dir = os.path.join(acronym_output, "mug", obj_id)
+        grid_dir = os.path.join(grid_output, "acronym", "mug", obj_id)
         
         # Process the model
         result = process_single_model(obj_path, surface_dir, grid_dir)
@@ -115,8 +115,8 @@ if __name__ == "__main__":
     GRID_OUTPUT = "data/grid_data"    # For grid samples
     
     # Create output directories
-    os.makedirs(os.path.join(ACRONYM_OUTPUT, "Airplane"), exist_ok=True)
-    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "Airplane"), exist_ok=True)
+    os.makedirs(os.path.join(ACRONYM_OUTPUT, "mug"), exist_ok=True)
+    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "mug"), exist_ok=True)
     
     # Run processing
-    process_all_Airplanes(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
+    process_all_mugs(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
