@@ -47,6 +47,7 @@ def create_mesh(
     sdf_values = cube[:, 3] - 0.5 if occupancy else cube[:, 3] 
     sdf_values = sdf_values.reshape(N, N, N) 
 
+    print("recon min/max:", sdf_values.min().item(), sdf_values.max().item())
     #print("inference time: {}".format(time.time() - start_time))
 
     convert_sdf_samples_to_ply(
