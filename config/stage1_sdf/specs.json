@@ -16,7 +16,7 @@
     "SampPerMesh" : 6400,
     "PCsize" : 1024,
   
-    "num_epochs" : 150,
+    "num_epochs" : 100,
     "log_freq" : 2,
     "kld_weight" : 1e-5,
     "latent_std" : 0.25,
