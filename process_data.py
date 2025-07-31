@@ -5,7 +5,7 @@ import point_cloud_utils as pcu
 from tqdm import tqdm
 
 # Constants
-SHAPENET_mug_CATEGORY = "02691156"  # Official ShapeNet category ID for mugs
+SHAPENET_mug_CATEGORY = "03797390"  # Official ShapeNet category ID for mugs
 MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
 
 def make_watertight_with_pcu(mesh_path):
