@@ -59,6 +59,7 @@ class SdfLoader(base.Dataset):
         self.gt_files = lst
 
 
+    """ 
     def __getitem__(self, idx): 
 
         near_surface_count = int(self.samples_per_mesh*0.7) if self.grid_source else self.samples_per_mesh
@@ -75,6 +76,23 @@ class SdfLoader(base.Dataset):
             sdf_xyz = torch.cat((sdf_xyz, grid_xyz))
             sdf_gt = torch.cat((sdf_gt, grid_gt))
             #print("shapes after adding grid: ", pc.shape, sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
+
+        data_dict = {
+                    "xyz":sdf_xyz.float().squeeze(),
+                    "gt_sdf":sdf_gt.float().squeeze(), 
+                    "point_cloud":pc.float().squeeze(),
+                    }
+
+        return data_dict
+        """
+
+    def __getitem__(self, idx): 
+
+
+        pc, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], self.samples_per_mesh, self.pc_size, load_from_path=False)
+        
+
+    
 
         data_dict = {
                     "xyz":sdf_xyz.float().squeeze(),
