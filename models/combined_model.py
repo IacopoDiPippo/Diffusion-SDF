@@ -134,8 +134,11 @@ class CombinedModel(pl.LightningModule):
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
-        
-        print("BPS grid checksum:", torch.sum(self.bps_grid))
+        print("Input pointcloud shape:", pc.shape)         # (B, N, 3)
+        print("Fixed BPS grid shape:", self.bps_grid.shape)        # (32768, 3) if 32³
+        print("BPS grid min/max:", self.bps_grid.min(), self.bps_grid.max())
+        print("BPS grid checksum:", torch.sum(self.bps_grid))      # Should be constant
+
 
         # Single debug call at the end
         self.debug_shapes(
