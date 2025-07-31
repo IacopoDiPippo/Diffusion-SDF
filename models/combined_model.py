@@ -217,22 +217,29 @@ class CombinedModel(pl.LightningModule):
         return torch.from_numpy(bps_grid_np).float().to(self.device)
 
     def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
-        """Process a point cloud with fixed BPS basis grid."""
-        if pointcloud.ndim == 3 and pointcloud.shape[0] == 1:
-            pointcloud = pointcloud.squeeze(0)  # shape (N, 3)
+        # pointcloud: (B, N, 3)
+        batch_size = pointcloud.shape[0]
 
-        pointcloud_np = pointcloud.detach().cpu().numpy()
-        pc_normalized = bps.normalize(pointcloud_np[None, ...])[0]  # add batch dim and remove it after
+        pointcloud_np = pointcloud.detach().cpu().numpy()  # (B, N, 3)
+        pc_normalized = bps.normalize(pointcloud_np)       # (B, N, 3)
 
+        # encode with custom fixed grid basis
         x_bps = bps.encode(
-            pc_normalized[None, ...],  # batch dim = 1
+            pc_normalized,
             bps_arrangement='custom',
             custom_basis=self.bps_grid.cpu().numpy(),
             bps_cell_type='deltas',
             n_jobs=1
-        )[0]  # remove batch dim
+        )  # (B, n_bps_points, 3)
 
-        return torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype).reshape(32, 32, 32, 3)
+        x_bps_tensor = torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype)
+
+        # reshape if needed, e.g. (B, 32, 32, 32, 3)
+        grid_size = int(round(self.bps_grid.shape[0] ** (1/3)))
+        x_bps_tensor = x_bps_tensor.view(batch_size, grid_size, grid_size, grid_size, 3)
+
+        return x_bps_tensor
+
 
     
     # the first half is the same as "train_sdf_modulation"
