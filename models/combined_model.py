@@ -209,10 +209,11 @@ class CombinedModel(pl.LightningModule):
     def _create_bps_grid(self, n_points=32**3):
         """Create a fixed BPS reference grid."""
         # Sample random fixed basis (or use 'grid' or 'sphere')
-        bps_grid_np = bps.arrange_basis(
-            bps_arrangement='grid',
-            n_bps_points=n_points,
-            bps_cell_type='deltas'
+        bps_grid_np = bps.generate_grid_basis(
+            grid_size=32,
+            n_dims=3,
+            minv=-1.5,
+            maxv=1.5
         )
         return torch.from_numpy(bps_grid_np).float().to(self.device)
 
