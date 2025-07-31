@@ -59,7 +59,7 @@ def test_modulations():
 
             base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
             recon = model.vae_model.generate(base_points) # ([1, D*3, resolution, resolution])
-            print("recon min/max:", recon.min().item(), recon.max().item())
+
             #print("mesh filename: ", mesh_filename)
 
             #print("mesh filename: ", mesh_filename)
