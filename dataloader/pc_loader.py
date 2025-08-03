@@ -59,8 +59,6 @@ class PCloader(base.Dataset):
         # data = torch.from_numpy(np.loadtxt(f, delimiter=',')).float()
         data = torch.from_numpy(pd.read_csv(f, sep=',',header=None).values).float()
         pc = data[data[:,-1]==0][:,:3]
-        pc_idx = torch.randperm(pc.shape[0])[:samp] 
-        pc = pc[pc_idx]
         #print("pc shape, dtype: ", pc.shape, pc.dtype) # [1024,3], torch.float32
         #pc = normalize_pc(pc)
         #print("pc shape: ", pc.shape, pc.max(), pc.min())
