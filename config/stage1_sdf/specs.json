@@ -8,12 +8,12 @@
     "training_task": "modulation",
   
     "SdfModelSpecs" : {
-      "hidden_dim" : 600,
+      "hidden_dim" : 512,
       "latent_dim" : 256,
-      "num_layers" : 3
+      "num_layers" : 9
     },
 
-    "SampPerMesh" : 1600,
+    "SampPerMesh" : 16000,
     "PCsize" : 1024,
   
     "num_epochs" : 300,
