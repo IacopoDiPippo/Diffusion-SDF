@@ -64,7 +64,7 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
         mesh = trimesh.Trimesh(vertices=verts, faces=faces)
 
         # Surface sampling
-        surface_points = sample_on_surface(mesh, 7000)
+        surface_points = sample_on_surface(mesh, 70000)
         surface_sdf = np.zeros(len(surface_points))
 
         # Gaussian perturbations
