@@ -64,7 +64,7 @@ class SdfLoader(base.Dataset):
 
         near_surface_count = int(self.samples_per_mesh*0.7) if self.grid_source else self.samples_per_mesh
 
-        _, sdf_xyz, sdf_gt =  self.labeled_sampling_surface(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
+        _, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         
         pc = self.get_pointcloud(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         if self.grid_source is not None:

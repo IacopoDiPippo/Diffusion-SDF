@@ -59,7 +59,7 @@ class Dataset(torch.utils.data.Dataset):
         half = int(subsample / 2) 
         neg_tensor = f[f[:,-1]<0]
         pos_tensor = f[f[:,-1]>0]
-
+        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num biggerzero-level points: {pos_tensor.shape[0]}, num  lower zero-level points: {neg_tensor.shape[0]}")
         if pos_tensor.shape[0] < half:
             pos_idx = torch.randint(0, pos_tensor.shape[0], (half,))
         else:
@@ -79,14 +79,48 @@ class Dataset(torch.utils.data.Dataset):
             neg_sample = pos_tensor[neg_idx]
         else:
             neg_sample = neg_tensor[neg_idx]
-
+        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num biggerzero-level points: {pos_sample.shape[0]}, num  lower zero-level points: {neg_sample.shape[0]}")
         pc = f[f[:,-1]==0][:,:3]
+
+        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num zero-level points: {pc.shape[0]}, requested pc_size: {pc_size}")
+
         pc_idx = torch.randperm(pc.shape[0])[:pc_size]
         pc = pc[pc_idx]
 
         samples = torch.cat([pos_sample, neg_sample], 0)
 
         return pc.float().squeeze(), samples[:,:3].float().squeeze(), samples[:, 3].float().squeeze() # pc, xyz, sdv
+
+    def get_pointcloud(self, f,load_from_path=True):
+        if load_from_path:
+            f=pd.read_csv(f, sep=',',header=None).values
+            f = torch.from_numpy(f)
+
+        
+    
+        pc = f[f[:,-1]==0][:,:3]
+
+
+
+        return pc.float().squeeze()
+
+    def labeled_sampling_surface(self, f, subsample, pc_size=1024, load_from_path=True):
+        if load_from_path:
+            f=pd.read_csv(f, sep=',',header=None).values
+            f = torch.from_numpy(f)
+
+      
+        
+        pc = f[f[:,-1]==0][:,:3]
+
+        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num zero-level points: {pc.shape[0]}, requested pc_size: {pc_size}")
+
+        pc_idx = torch.randperm(pc.shape[0])[:pc_size]
+        pc = pc[pc_idx]
+        samples = f[pc_idx]
+
+        return pc.float().squeeze(), samples[:,:3].float().squeeze(), samples[:, 3].float().squeeze() # pc, xyz, sdv
+
 
 
     def get_instance_filenames(self, data_source, split, gt_filename="sdf_data.csv", filter_modulation_path=None):
