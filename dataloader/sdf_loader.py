@@ -59,17 +59,17 @@ class SdfLoader(base.Dataset):
         self.gt_files = lst
 
 
-    """ 
+  
     def __getitem__(self, idx): 
 
         near_surface_count = int(self.samples_per_mesh*0.7) if self.grid_source else self.samples_per_mesh
 
-        pc, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
+        _, sdf_xyz, sdf_gt =  self.labeled_sampling_surface(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         
-
+        pc = self.get_pointcloud(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         if self.grid_source is not None:
             grid_count = self.samples_per_mesh - near_surface_count
-            _, grid_xyz, grid_gt = self.labeled_sampling(self.grid_files[idx], grid_count, pc_size=0, load_from_path=False)
+            _, grid_xyz, grid_gt = self.labeled_sampling(self.grid_files[idx], grid_count, pc_size=grid_count, load_from_path=False)
             # each getitem is one batch so no batch dimension, only N, 3 for xyz or N for gt 
             # for 16000 points per batch, near surface is 11200, grid is 4800
             #print("shapes: ", pc.shape,  sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
@@ -84,23 +84,7 @@ class SdfLoader(base.Dataset):
                     }
 
         return data_dict
-        """
-
-    def __getitem__(self, idx): 
-
-
-        pc, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], self.samples_per_mesh, self.pc_size, load_from_path=False)
-        
-
-    
-
-        data_dict = {
-                    "xyz":sdf_xyz.float().squeeze(),
-                    "gt_sdf":sdf_gt.float().squeeze(), 
-                    "point_cloud":pc.float().squeeze(),
-                    }
-
-        return data_dict
+  
 
     def __len__(self):
         return len(self.gt_files)
