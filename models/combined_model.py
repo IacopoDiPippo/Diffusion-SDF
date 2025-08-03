@@ -129,6 +129,27 @@ class CombinedModel(pl.LightningModule):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
         pc = x['point_cloud']  # (B, 1024, 3)
+        def sorted_pointcloud(pc: torch.Tensor) -> torch.Tensor:
+            # pc shape: (B, N, 3)
+            # Sort points along N by coordinate (e.g. lexicographically by x, then y, then z)
+            sorted_pc, _ = torch.sort(pc, dim=1)  # sort points along dimension N
+            return sorted_pc
+
+        def are_pointclouds_equal(pc1: torch.Tensor, pc2: torch.Tensor, tol=1e-6) -> bool:
+            # Sort both pointclouds and compare
+            spc1 = sorted_pointcloud(pc1)
+            spc2 = sorted_pointcloud(pc2)
+            return torch.allclose(spc1, spc2, atol=tol)
+        
+        print("Input checksum:", torch.sum(pc))
+        # Save first batch PC if not done yet
+        if hasattr(self, '_prev_pc'):
+            same_pc = are_pointclouds_equal(pc, self._prev_pc)
+            print(f"Pointcloud same as previous iteration (invariant to permutation)? {same_pc}")
+        self._prev_pc = pc.clone()
+
+    
+
         print("Input checksum:", torch.sum(pc))
         base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
@@ -141,6 +162,17 @@ class CombinedModel(pl.LightningModule):
         print("Base_points", base_points.shape)
         print("BAsepoints:", torch.sum(base_points)) 
 
+        # Check BPS encoding consistency
+        if not hasattr(self, '_first_bps'):
+            self._first_bps = base_points.detach().clone()
+            print("✅ Saved initial BPS encoding for comparison.")
+        else:
+            diff_bps = np.linalg.norm((self._first_bps - base_points).cpu().numpy())
+            if diff_bps > 1e-6:
+                print(f"❗ BPS encoding changed. Norm diff: {diff_bps:.6f}")
+            else:
+                print("✅ BPS encoding unchanged.")
+
         # Single debug call at the end
         self.debug_shapes(
             xyz=xyz,
@@ -152,7 +184,17 @@ class CombinedModel(pl.LightningModule):
             latent=latent,
         )
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
-        
+        print("✅ pred_sdf info:")
+        print("  Type:", type(pred_sdf))
+        print("  Shape:", pred_sdf.shape)
+        print("  Dtype:", pred_sdf.dtype)
+        print("  Min:", pred_sdf.min().item())
+        print("  Max:", pred_sdf.max().item())
+        print("  Mean:", pred_sdf.mean().item())
+        print("  Std:", pred_sdf.std().item())
+        print("  Unique values:", torch.unique(pred_sdf).numel())
+        print("  All values equal?", torch.all(pred_sdf == pred_sdf.view(-1)[0]).item())
+
         # Single debug call at the end
         self.debug_shapes(
             xyz=xyz,
@@ -227,6 +269,18 @@ class CombinedModel(pl.LightningModule):
         pointcloud_np = pointcloud.detach().cpu().numpy()  # (B, N, 3)
         pc_normalized = bps.normalize(pointcloud_np)       # (B, N, 3)
 
+        # Check bps_grid consistency
+        current_grid = self.bps_grid.cpu().numpy()
+        if not hasattr(self, '_first_bps_grid'):
+            self._first_bps_grid = current_grid
+            print("✅ Saved initial bps_grid for comparison.")
+        else:
+            grid_diff = np.linalg.norm(self._first_bps_grid - current_grid)
+            if grid_diff > 1e-12:  # very tight threshold since this should be fixed
+                print(f"❗ bps_grid changed! Norm diff: {grid_diff:.12f}")
+            else:
+                print("✅ bps_grid unchanged.")
+
         # encode with custom fixed grid basis
         x_bps = bps.encode(
             pc_normalized,
@@ -235,6 +289,8 @@ class CombinedModel(pl.LightningModule):
             bps_cell_type='deltas',
             n_jobs=1
         )  # (B, n_bps_points, 3)
+
+        
 
         x_bps_tensor = torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype)
 

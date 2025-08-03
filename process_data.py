@@ -8,7 +8,7 @@ from tqdm import tqdm
 SHAPENET_mug_CATEGORY = "03797390"  # Official ShapeNet category ID for mugs
 MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
 
-def make_watertight_with_pcu(mesh_path):
+def make_watertight_with_pcu(mesh_path: str):
     """Create watertight mesh using point-cloud-utils"""
     mesh = trimesh.load(mesh_path, force='mesh')
     if isinstance(mesh, trimesh.Scene):
@@ -18,34 +18,38 @@ def make_watertight_with_pcu(mesh_path):
     verts, faces = pcu.make_mesh_watertight(mesh.vertices, mesh.faces, resolution=20000)
     return verts, faces
 
-def normalize_mesh(verts):
-    """Normalize vertices to fit in unit cube centered at origin"""
-    verts = verts - np.mean(verts, axis=0)
-    scale = 1.0 / np.max(np.ptp(verts, axis=0))
-    return verts * scale
+def normalize_mesh(verts: np.ndarray) -> np.ndarray:
+    """Center and normalize mesh such that diagonal of bounding box = 1"""
+    min_bb = np.min(verts, axis=0)
+    max_bb = np.max(verts, axis=0)
+    center = (min_bb + max_bb) / 2.0
+    diagonal = np.linalg.norm(max_bb - min_bb)
+    return (verts - center) / diagonal
 
-def sample_on_surface(mesh, num_points):
+def sample_on_surface(mesh: trimesh.Trimesh, num_points: int) -> np.ndarray:
     """Sample points on mesh surface"""
     return trimesh.sample.sample_surface(mesh, num_points)[0]
 
-def sample_uniform_grid(num_points):
-    """Sample points in uniform 3D grid"""
-    return np.random.uniform(-1, 1, size=(num_points, 3))
+def sample_uniform_grid(resolution: int = 128) -> np.ndarray:
+    """Generate uniform 3D grid of points in [-1, 1]^3"""
+    lin = np.linspace(-1, 1, resolution)
+    grid_x, grid_y, grid_z = np.meshgrid(lin, lin, lin, indexing='ij')
+    grid_points = np.stack([grid_x, grid_y, grid_z], axis=-1).reshape(-1, 3)
+    return grid_points
 
-def compute_signed_distance(verts, faces, points):
+def compute_signed_distance(verts: np.ndarray, faces: np.ndarray, points: np.ndarray) -> np.ndarray:
     """Compute signed distance for points"""
     return pcu.signed_distance_to_mesh(points, verts, faces)[0]
 
-def save_samples(output_dir, filename, points, distances):
+def save_samples(output_dir: str, filename: str, points: np.ndarray, distances: np.ndarray) -> str:
     """Save sampled points with distances to CSV"""
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, filename)
     np.savetxt(path, np.hstack([points, distances.reshape(-1, 1)]), delimiter=',')
     return path
 
-def process_single_model(obj_path, surface_output_dir, grid_output_dir):
+def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir: str) -> str:
     """Process a single model and save both surface and grid samples"""
-    # Skip if both outputs exist
     obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
     surface_csv = os.path.join(surface_output_dir, "sdf_data.csv")
     grid_csv = os.path.join(grid_output_dir, "grid_gt.csv")
@@ -54,52 +58,58 @@ def process_single_model(obj_path, surface_output_dir, grid_output_dir):
         return "skipped"
     
     try:
-        # Process mesh
+        # Watertight and normalized
         verts, faces = make_watertight_with_pcu(obj_path)
         verts = normalize_mesh(verts)
         mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-        
-        # Generate and save surface samples
+
+        # Surface sampling
         surface_points = sample_on_surface(mesh, 7000)
-        surface_sdf = 0
-        save_samples(surface_output_dir, "sdf_data.csv", surface_points, surface_sdf)
-        
-        # Generate and save grid samples
-        grid_points = sample_uniform_grid(3000)
+        surface_sdf = np.zeros(len(surface_points))
+
+        # Gaussian perturbations
+        noisy_005 = surface_points + np.random.normal(0, 0.005, surface_points.shape)
+        noisy_0005 = surface_points + np.random.normal(0, 0.0005, surface_points.shape)
+
+        sdf_005 = compute_signed_distance(verts, faces, noisy_005)
+        sdf_0005 = compute_signed_distance(verts, faces, noisy_0005)
+
+        all_points = np.vstack([surface_points, noisy_005, noisy_0005])
+        all_sdf = np.concatenate([surface_sdf, sdf_005, sdf_0005])
+
+        save_samples(surface_output_dir, "sdf_data.csv", all_points, all_sdf)
+
+        # Structured grid sampling
+        grid_points = sample_uniform_grid(128)
         grid_sdf = compute_signed_distance(verts, faces, grid_points)
         save_samples(grid_output_dir, "grid_gt.csv", grid_points, grid_sdf)
-        
+
         return "success"
     except Exception as e:
         print(f"Error processing {obj_id}: {str(e)}")
         return "failed"
 
-def process_all_mugs(shapenet_root, acronym_output, grid_output):
+def process_all_mugs(shapenet_root: str, acronym_output: str, grid_output: str):
     """Process all mug models from ShapeNet"""
     mug_dir = os.path.join(shapenet_root, SHAPENET_mug_CATEGORY)
     
     if not os.path.exists(mug_dir):
         raise FileNotFoundError(f"mug category directory not found at {mug_dir}")
     
-    model_ids = [d for d in os.listdir(mug_dir) 
-               if os.path.isdir(os.path.join(mug_dir, d))]
-    
+    model_ids = [d for d in os.listdir(mug_dir) if os.path.isdir(os.path.join(mug_dir, d))]
     stats = {"success": 0, "skipped": 0, "failed": 0}
     
     print(f"Processing {len(model_ids)} mug models...")
     for obj_id in tqdm(model_ids, desc="mug Models"):
         obj_path = os.path.join(mug_dir, obj_id, MODEL_FILE_PATH)
         
-        # Skip if model doesn't exist
         if not os.path.exists(obj_path):
             stats["failed"] += 1
             continue
-            
-        # Set up output directories
+        
         surface_dir = os.path.join(acronym_output, "mug", obj_id)
         grid_dir = os.path.join(grid_output, "acronym", "mug", obj_id)
         
-        # Process the model
         result = process_single_model(obj_path, surface_dir, grid_dir)
         stats[result] += 1
     
@@ -109,14 +119,11 @@ def process_all_mugs(shapenet_root, acronym_output, grid_output):
     print(f"Failed:     {stats['failed']}")
 
 if __name__ == "__main__":
-    # Configure paths
-    SHAPENET_ROOT = "shapenet_download/ShapeNetCore.v2"  # Root of ShapeNet dataset
-    ACRONYM_OUTPUT = "data/acronym"  # For surface samples
-    GRID_OUTPUT = "data/grid_data"    # For grid samples
-    
-    # Create output directories
+    SHAPENET_ROOT = "shapenet_download/ShapeNetCore.v2"
+    ACRONYM_OUTPUT = "data/acronym"
+    GRID_OUTPUT = "data/grid_data"
+
     os.makedirs(os.path.join(ACRONYM_OUTPUT, "mug"), exist_ok=True)
     os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "mug"), exist_ok=True)
-    
-    # Run processing
+
     process_all_mugs(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
