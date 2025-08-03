@@ -195,6 +195,18 @@ class CombinedModel(pl.LightningModule):
         print("  Unique values:", torch.unique(pred_sdf).numel())
         print("  All values equal?", torch.all(pred_sdf == pred_sdf.view(-1)[0]).item())
 
+        # Info gt_sdf
+        print("✅ gt_sdf info:")
+        print(f"  Type: {type(gt)}")
+        print(f"  Shape: {gt.shape}")
+        print(f"  Dtype: {gt.dtype}")
+        print(f"  Min: {gt.min().item():.6f}")
+        print(f"  Max: {gt.max().item():.6f}")
+        print(f"  Mean: {gt.mean().item():.6f}")
+        print(f"  Std: {gt.std().item():.6f}")
+        print(f"  Unique values: {torch.unique(gt).numel()}")
+        print(f"  All values equal? {torch.all(gt == gt.view(-1)[0]).item()}")
+
         # Single debug call at the end
         self.debug_shapes(
             xyz=xyz,
