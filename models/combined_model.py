@@ -123,7 +123,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         return loss
-    "
+    
 
     def train_modulation_base_points(self, x):
         xyz = x['xyz']  # (B, N, 3)
