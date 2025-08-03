@@ -123,7 +123,7 @@ if __name__ == "__main__":
     ACRONYM_OUTPUT = "data/acronym"
     GRID_OUTPUT = "data/grid_data"
 
-    os.makedirs(os.path.join(ACRONYM_OUTPUT, "mug"), exist_ok=True)
-    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "mug"), exist_ok=True)
+    os.makedirs(os.path.join(ACRONYM_OUTPUT, "Mug"), exist_ok=True)
+    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "Mug"), exist_ok=True)
 
     process_all_mugs(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)

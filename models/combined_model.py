@@ -140,7 +140,7 @@ class CombinedModel(pl.LightningModule):
             spc1 = sorted_pointcloud(pc1)
             spc2 = sorted_pointcloud(pc2)
             return torch.allclose(spc1, spc2, atol=tol)
-        
+        pc = 
         print("Input checksum:", torch.sum(pc))
         # Save first batch PC if not done yet
         if hasattr(self, '_prev_pc'):
