@@ -123,7 +123,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         return loss
-    
+    "
 
     def train_modulation_base_points(self, x):
         xyz = x['xyz']  # (B, N, 3)
@@ -140,7 +140,7 @@ class CombinedModel(pl.LightningModule):
             spc1 = sorted_pointcloud(pc1)
             spc2 = sorted_pointcloud(pc2)
             return torch.allclose(spc1, spc2, atol=tol)
-        pc = 
+        
         print("Input checksum:", torch.sum(pc))
         # Save first batch PC if not done yet
         if hasattr(self, '_prev_pc'):
