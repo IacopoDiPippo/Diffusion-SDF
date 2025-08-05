@@ -1,10 +1,8 @@
 import torch
-
 import torch.utils.data 
 from torch.nn import functional as F
-from bps import bps
 import pytorch_lightning as pl
-from bps import bps
+
 # add paths in model/__init__.py for new models
 from models import * 
 
@@ -19,21 +17,21 @@ class CombinedModel(pl.LightningModule):
             self.sdf_model = SdfModel(specs=specs) 
 
             feature_dim = specs["SdfModelSpecs"]["latent_dim"] # latent dim of pointnet 
-            modulation_dim = feature_dim # latent dim of modulation
+            modulation_dim = feature_dim*3 # latent dim of modulation
             latent_std = specs.get("latent_std", 0.25) # std of target gaussian distribution of latent space
             hidden_dims = [modulation_dim, modulation_dim, modulation_dim, modulation_dim, modulation_dim]
-            self.vae_model = BetaVAE(in_channels=3, latent_dim=feature_dim, hidden_dims=None, kl_std=latent_std)
+            self.vae_model = BetaVAE(in_channels=feature_dim*3, latent_dim=modulation_dim, hidden_dims=hidden_dims, kl_std=latent_std)
+
         if self.task in ('combined', 'diffusion'):
             self.diffusion_model = DiffusionModel(model=DiffusionNet(**specs["diffusion_model_specs"]), **specs["diffusion_specs"]) 
  
-        self.bps_grid = self._create_bps_grid()
 
     def training_step(self, x, idx):
 
         if self.task == 'combined':
             return self.train_combined(x)
         elif self.task == 'modulation':
-            return self.train_modulation_base_points(x)
+            return self.train_modulation(x)
         elif self.task == 'diffusion':
             return self.train_diffusion(x)
         
@@ -66,160 +64,20 @@ class CombinedModel(pl.LightningModule):
 
     #-----------different training steps for sdf modulation, diffusion, combined----------
 
-    def debug_shapes(self,**kwargs):
-        """Prints shapes/types of all provided variables. Call this at the end of your function."""
-        if False:
-            print("\n=== Debug Shapes ===")
-            for name, value in kwargs.items():
-                shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
-                dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
-                print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
-            print("==================\n")
+    def train_modulation(self, x):
 
-    def train_modulation_with_pointnet(self, x):
-        xyz = x['xyz']  # (B, N, 3)
-        gt = x['gt_sdf']  # (B, N)
-        pc = x['point_cloud']  # (B, 1024, 3)
-        
-         # STEP 1: obtain reconstructed plane feature and latent code 
-        points_features = self.sdf_model.pointnet.get_points_features(pc)
-        original_features = torch.cat(points_features, dim=1)
+        xyz = x['xyz'] # (B, N, 3)
+        gt = x['gt_sdf'] # (B, N)
+        pc = x['point_cloud'] # (B, 1024, 3)
+
+        # STEP 1: obtain reconstructed plane feature and latent code 
+        plane_features = self.sdf_model.pointnet.get_plane_features(pc)
+        original_features = torch.cat(plane_features, dim=1)
         out = self.vae_model(original_features) # out = [self.decode(z), input, mu, log_var, z]
-        reconstructed_points_feature, latent = out[0], out[-1]
+        reconstructed_plane_feature, latent = out[0], out[-1]
 
         # STEP 2: pass recon back to GenSDF pipeline 
-        pred_sdf = self.sdf_model.forward_with_points_features(reconstructed_points_feature, xyz)
-        
-
-        
-        # Single debug call at the end
-        self.debug_shapes(
-            xyz=xyz,
-            gt=gt,
-            pc=pc,
-            base_points=points_features,
-            vae_output=out,
-            reconstructed_base_point=reconstructed_points_feature,
-            latent=latent,
-            pred_sdf=pred_sdf
-        )
-        
-
-        
-        # STEP 3: losses for VAE and SDF
-        # we only use the KL loss for the VAE; no reconstruction loss
-        try:
-            vae_loss = self.vae_model.loss_function(*out, M_N=self.specs["kld_weight"] )
-        except:
-            print("vae loss is nan at epoch {}...".format(self.current_epoch))
-            return None # skips this batch
-
-        sdf_loss = F.l1_loss(pred_sdf.squeeze(), gt.squeeze(), reduction='none')
-        sdf_loss = reduce(sdf_loss, 'b ... -> b (...)', 'mean').mean()
-
-        loss = sdf_loss + vae_loss
-
-        loss_dict =  {"sdf": sdf_loss, "vae": vae_loss}
-        self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
-
-        return loss
-    
-
-    def train_modulation_base_points(self, x):
-        xyz = x['xyz']  # (B, N, 3)
-        gt = x['gt_sdf']  # (B, N)
-        pc = x['point_cloud']  # (B, 1024, 3)
-        def sorted_pointcloud(pc: torch.Tensor) -> torch.Tensor:
-            # pc shape: (B, N, 3)
-            # Sort points along N by coordinate (e.g. lexicographically by x, then y, then z)
-            sorted_pc, _ = torch.sort(pc, dim=1)  # sort points along dimension N
-            return sorted_pc
-
-        def are_pointclouds_equal(pc1: torch.Tensor, pc2: torch.Tensor, tol=1e-6) -> bool:
-            # Sort both pointclouds and compare
-            spc1 = sorted_pointcloud(pc1)
-            spc2 = sorted_pointcloud(pc2)
-            return torch.allclose(spc1, spc2, atol=tol)
-        
-        print("Input checksum:", torch.sum(pc))
-        # Save first batch PC if not done yet
-        if hasattr(self, '_prev_pc'):
-            same_pc = are_pointclouds_equal(pc, self._prev_pc)
-            print(f"Pointcloud same as previous iteration (invariant to permutation)? {same_pc}")
-        self._prev_pc = pc.clone()
-
-    
-
-        print("Input checksum:", torch.sum(pc))
-        base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
-        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
-        out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
-        reconstructed_base_point, latent = out[0], out[-1]
-        print("Input pointcloud shape:", pc.shape)         # (B, N, 3)
-        print("Fixed BPS grid shape:", self.bps_grid.shape)        # (32768, 3) if 32³
-        print("BPS grid min/max:", self.bps_grid.min(), self.bps_grid.max())
-        print("BPS grid checksum:", torch.sum(self.bps_grid))      # Should be constant
-        print("Base_points", base_points.shape)
-        print("BAsepoints:", torch.sum(base_points)) 
-
-        # Check BPS encoding consistency
-        if not hasattr(self, '_first_bps'):
-            self._first_bps = base_points.detach().clone()
-            print("✅ Saved initial BPS encoding for comparison.")
-        else:
-            diff_bps = np.linalg.norm((self._first_bps - base_points).cpu().numpy())
-            if diff_bps > 1e-6:
-                print(f"❗ BPS encoding changed. Norm diff: {diff_bps:.6f}")
-            else:
-                print("✅ BPS encoding unchanged.")
-
-        # Single debug call at the end
-        self.debug_shapes(
-            xyz=xyz,
-            gt=gt,
-            pc=pc,
-            base_points=base_points,
-            vae_output=out,
-            reconstructed_base_point=reconstructed_base_point,
-            latent=latent,
-        )
-        pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
-        print("✅ pred_sdf info:")
-        print("  Type:", type(pred_sdf))
-        print("  Shape:", pred_sdf.shape)
-        print("  Dtype:", pred_sdf.dtype)
-        print("  Min:", pred_sdf.min().item())
-        print("  Max:", pred_sdf.max().item())
-        print("  Mean:", pred_sdf.mean().item())
-        print("  Std:", pred_sdf.std().item())
-        print("  Unique values:", torch.unique(pred_sdf).numel())
-        print("  All values equal?", torch.all(pred_sdf == pred_sdf.view(-1)[0]).item())
-
-        # Info gt_sdf
-        print("✅ gt_sdf info:")
-        print(f"  Type: {type(gt)}")
-        print(f"  Shape: {gt.shape}")
-        print(f"  Dtype: {gt.dtype}")
-        print(f"  Min: {gt.min().item():.6f}")
-        print(f"  Max: {gt.max().item():.6f}")
-        print(f"  Mean: {gt.mean().item():.6f}")
-        print(f"  Std: {gt.std().item():.6f}")
-        print(f"  Unique values: {torch.unique(gt).numel()}")
-        print(f"  All values equal? {torch.all(gt == gt.view(-1)[0]).item()}")
-
-        # Single debug call at the end
-        self.debug_shapes(
-            xyz=xyz,
-            gt=gt,
-            pc=pc,
-            base_points=base_points,
-            vae_output=out,
-            reconstructed_base_point=reconstructed_base_point,
-            latent=latent,
-            pred_sdf=pred_sdf
-        )
-        
-
+        pred_sdf = self.sdf_model.forward_with_plane_features(reconstructed_plane_feature, xyz)
         
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss
@@ -264,56 +122,6 @@ class CombinedModel(pl.LightningModule):
 
         return diff_loss
 
-    def _create_bps_grid(self, grid_size=32, radius=1.5):
-        """Create a fixed BPS reference grid."""
-        bps_grid_np = bps.generate_grid_basis(
-            grid_size=grid_size,
-            n_dims=3,
-            minv=-radius,
-            maxv=radius
-        )
-        return torch.from_numpy(bps_grid_np).float().to(self.device)
-
-    def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
-        # pointcloud: (B, N, 3)
-        batch_size = pointcloud.shape[0]
-
-        pointcloud_np = pointcloud.detach().cpu().numpy()  # (B, N, 3)
-        pc_normalized = bps.normalize(pointcloud_np)       # (B, N, 3)
-
-        # Check bps_grid consistency
-        current_grid = self.bps_grid.cpu().numpy()
-        if not hasattr(self, '_first_bps_grid'):
-            self._first_bps_grid = current_grid
-            print("✅ Saved initial bps_grid for comparison.")
-        else:
-            grid_diff = np.linalg.norm(self._first_bps_grid - current_grid)
-            if grid_diff > 1e-12:  # very tight threshold since this should be fixed
-                print(f"❗ bps_grid changed! Norm diff: {grid_diff:.12f}")
-            else:
-                print("✅ bps_grid unchanged.")
-
-        # encode with custom fixed grid basis
-        x_bps = bps.encode(
-            pc_normalized,
-            bps_arrangement='custom',
-            custom_basis=self.bps_grid.cpu().numpy(),
-            bps_cell_type='deltas',
-            n_jobs=1
-        )  # (B, n_bps_points, 3)
-
-        
-
-        x_bps_tensor = torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype)
-
-        # reshape if needed, e.g. (B, 32, 32, 32, 3)
-        grid_size = int(round(self.bps_grid.shape[0] ** (1/3)))
-        x_bps_tensor = x_bps_tensor.view(batch_size, grid_size, grid_size, grid_size, 3)
-
-        return x_bps_tensor
-
-
-    
     # the first half is the same as "train_sdf_modulation"
     # the reconstructed latent is used as input to the diffusion model, rather than loading latents from the dataloader as in "train_diffusion"
     def train_combined(self, x):

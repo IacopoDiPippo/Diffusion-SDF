@@ -54,21 +54,13 @@ def test_modulations():
             os.makedirs(outdir, exist_ok=True)
             mesh_filename = os.path.join(outdir, "reconstruct")
             
-            # Save the input point cloud for reference as ground truth
-            gt_save_path = os.path.join(outdir, "groundtruth.xyz")
-            np.savetxt(gt_save_path, point_cloud.squeeze(0).cpu().numpy())
-
             # given point cloud, create modulations (e.g. 1D latent vectors)
-            base_points = model.get_base_points(point_cloud.cuda()) #Get (B, 32, 32, 32, 3)
-
-            base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
-            recon = model.vae_model.generate(base_points) # ([1, D*3, resolution, resolution])
-
-            #print("mesh filename: ", mesh_filename)
-
+            plane_features = model.sdf_model.pointnet.get_plane_features(point_cloud.cuda())  # tuple, 3 items with ([1, D, resolution, resolution])
+            plane_features = torch.cat(plane_features, dim=1) # ([1, D*3, resolution, resolution])
+            recon = model.vae_model.generate(plane_features) # ([1, D*3, resolution, resolution])
             #print("mesh filename: ", mesh_filename)
             # N is the grid resolution for marching cubes; set max_batch to largest number gpu can hold
-            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=32, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=256, max_batch=2**21, from_plane_features=True)
 
             # load the created mesh (mesh_filename), and compare with input point cloud
             # to calculate and log chamfer distance 
@@ -130,7 +122,7 @@ def test_generation():
         plane_features = model.vae_model.decode(samples)
         for i in range(len(plane_features)):
             plane_feature = plane_features[i].unsqueeze(0)
-            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=32, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=128, max_batch=2**21, from_plane_features=True)
             
     else:
         # load dataset, dataloader, model checkpoint
@@ -182,7 +174,7 @@ def test_generation():
                 
                 for i in range(len(plane_features)):
                     plane_feature = plane_features[i].unsqueeze(0)
-                    mesh.create_mesh(model.sdf_model, plane_feature, outdir+"/{}_recon".format(i), N=32, max_batch=2**21, from_plane_features=True)
+                    mesh.create_mesh(model.sdf_model, plane_feature, outdir+"/{}_recon".format(i), N=128, max_batch=2**21, from_plane_features=True)
             
 
 

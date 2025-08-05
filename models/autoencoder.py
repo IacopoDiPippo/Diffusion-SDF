@@ -39,7 +39,8 @@ class BetaVAE(nn.Module):
 
         modules = []
         if hidden_dims is None:
-            hidden_dims = [32, 64, 128]
+            #hidden_dims = [32, 64, 128, 256, 512]
+            hidden_dims = [512, 512, 512, 512, 512]
 
         self.hidden_dims = hidden_dims
 
@@ -47,21 +48,56 @@ class BetaVAE(nn.Module):
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=2, padding=1),
-                    nn.BatchNorm3d(h_dim),
+                    nn.Conv2d(in_channels, out_channels=h_dim, kernel_size=3, stride=2, padding=1),
+                    nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU())
             )
             in_channels = h_dim
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
-        self.fc_var = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim) 
+        self.fc_mu = nn.Linear(hidden_dims[-1]*4, latent_dim)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
+        self.fc_var = nn.Linear(hidden_dims[-1]*4, latent_dim) 
 
 
         # Build Decoder
         modules = []
 
+        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * 4) 
 
+        hidden_dims.reverse()
+
+        for i in range(len(hidden_dims) - 1):
+            modules.append(
+                nn.Sequential(
+                    nn.ConvTranspose2d(hidden_dims[i],
+                                    hidden_dims[i + 1],
+                                    kernel_size=3,
+                                    stride = 2,
+                                    padding=1,
+                                    output_padding=1),
+                    nn.BatchNorm2d(hidden_dims[i + 1]),
+                    nn.LeakyReLU())
+            )
+
+
+
+        self.decoder = nn.Sequential(*modules)
+
+        self.final_layer = nn.Sequential(
+                            nn.ConvTranspose2d(hidden_dims[-1],
+                                               hidden_dims[-1],
+                                               kernel_size=3,
+                                               stride=2,
+                                               padding=1,
+                                               output_padding=1),
+                            nn.BatchNorm2d(hidden_dims[-1]),
+                            nn.LeakyReLU(),
+                            nn.Conv2d(hidden_dims[-1], out_channels= self.in_channels, # changed from 3 to in_channels
+                                      kernel_size= 3, padding= 1),
+                            nn.Tanh())
+
+
+        #print(self)
 
     def encode(self, enc_input: Tensor) -> List[Tensor]:
         """
@@ -71,25 +107,26 @@ class BetaVAE(nn.Module):
         :return: (Tensor) List of latent codes
         """
         result = enc_input
-        result = self.encoder(enc_input)  # [B, D, 4, 4, 4]
-        self.debug_shapes(enc_input = enc_input, result = result)
-        result = torch.flatten(result, start_dim=1) # ([B, D*4*4*4])
+        result = self.encoder(enc_input)  # [B, D, 2, 2]
+        result = torch.flatten(result, start_dim=1) # ([32, D*4])
 
+        # Split the result into mu and var components
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
         log_var = self.fc_var(result)
 
         return [mu, log_var]
 
-    def debug_shapes(self,**kwargs):
-        if False:
-            """Prints shapes/types of all provided variables. Call this at the end of your function."""
-            print("\n=== Debug Shapes ===")
-            for name, value in kwargs.items():
-                shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
-                dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
-                print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
-            print("==================\n")
+    def decode(self, z: Tensor) -> Tensor:
+        '''
+        z: latent vector: B, D (D = latent_dim*3)
+        '''
+        
+        result = self.decoder_input(z) # ([32, D*4])
+        result = result.view(-1, int(result.shape[-1]/4), 2, 2)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
+        result = self.decoder(result)
+        result = self.final_layer(result) # ([32, D, resolution, resolution])
+        return result
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         """
@@ -106,7 +143,7 @@ class BetaVAE(nn.Module):
     def forward(self, data: Tensor, **kwargs) -> Tensor:
         mu, log_var = self.encode(data)
         z = self.reparameterize(mu, log_var)
-        return  [z, data, mu, log_var, z]
+        return  [self.decode(z), data, mu, log_var, z]
 
     # only using VAE loss
     def loss_function(self,

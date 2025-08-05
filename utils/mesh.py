@@ -13,7 +13,7 @@ import torch
 # max batch: as large as GPU memory will allow
 # shape_feature is either point cloud, mesh_idx (neuralpull), or generated latent code (deepsdf)
 def create_mesh(
-    model, shape_feature, filename, N=256, max_batch=1000000, level_set=0.0, occupancy=False, point_cloud=None, from_plane_features=True, from_pc_features=False
+    model, shape_feature, filename, N=256, max_batch=1000000, level_set=0.0, occupancy=False, point_cloud=None, from_plane_features=False, from_pc_features=False
 ):
     
     start_time = time.time()
@@ -35,7 +35,7 @@ def create_mesh(
         # inference defined in forward function per pytorch lightning convention
         #print("shapes: ", shape_feature.shape, query.shape)
         if from_plane_features:
-            pred_sdf = model.forward_with_base_features(shape_feature.cuda(), query.cuda()).detach().cpu()
+            pred_sdf = model.forward_with_plane_features(shape_feature.cuda(), query.cuda()).detach().cpu()
         else:
             pred_sdf = model(shape_feature.cuda(), query.cuda()).detach().cpu()
 
@@ -47,7 +47,6 @@ def create_mesh(
     sdf_values = cube[:, 3] - 0.5 if occupancy else cube[:, 3] 
     sdf_values = sdf_values.reshape(N, N, N) 
 
-    print("recon min/max:", sdf_values.min().item(), sdf_values.max().item())
     #print("inference time: {}".format(time.time() - start_time))
 
     convert_sdf_samples_to_ply(

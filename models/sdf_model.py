@@ -29,8 +29,11 @@ class SdfModel(pl.LightningModule):
         self.latent_dim = model_specs["latent_dim"]
         self.skip_connection = model_specs.get("skip_connection", True)
         self.tanh_act = model_specs.get("tanh_act", False)
+        self.pn_hidden = model_specs.get("pn_hidden_dim", self.latent_dim)
 
-        self.model = SdfDecoder( hidden_dim=self.hidden_dim, skip_connection=self.skip_connection, tanh_act=self.tanh_act, latent_size= self.latent_dim)
+        self.pointnet = ConvPointnet(c_dim=self.latent_dim, hidden_dim=self.pn_hidden, plane_resolution=64)
+        
+        self.model = SdfDecoder(latent_size=self.latent_dim, hidden_dim=self.hidden_dim, skip_connection=self.skip_connection, tanh_act=self.tanh_act)
         
         self.model.train()
         #print(self.model)
@@ -72,33 +75,3 @@ class SdfModel(pl.LightningModule):
         point_features = self.pointnet.forward_with_plane_features(plane_features, xyz) # point_features: B, N, D
         pred_sdf = self.model( torch.cat((xyz, point_features),dim=-1) )  
         return pred_sdf # [B, num_points] 
-
-
-    def forward_with_base_features(self, base_features, xyz):
-        # Your original computation
-        # Expand base features to match point count
-        base_features = base_features.unsqueeze(1)  # [B, 1, D]
-        base_features = base_features.expand(-1, xyz.shape[1], -1)  # [B, N, D]
-        
-        combined_input = torch.cat((xyz, base_features), dim=-1)
-        pred_sdf = self.model(combined_input)  # [B, num_points]
-        
-        # Single debug call at the end (can be easily removed)
-        self.debug_shapes(
-            xyz=xyz,
-            base_features=base_features,
-            combined_input=combined_input,
-            pred_sdf=pred_sdf
-        )
-        
-        return pred_sdf
-
-    def debug_shapes(self,**kwargs):
-        """Prints shapes/types of all provided variables. Call this at the end of your function."""
-        if False:
-            print("\n=== Debug Shapes ===")
-            for name, value in kwargs.items():
-                shape = str(list(value.shape)) if hasattr(value, 'shape') else str(len(value)) if hasattr(value, '__len__') else 'scalar'
-                dtype = str(value.dtype) if hasattr(value, 'dtype') else type(value).__name__
-                print(f"{name.ljust(20)}: shape={shape.ljust(25)} type={dtype}")
-            print("==================\n")

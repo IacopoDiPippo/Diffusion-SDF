@@ -6,7 +6,6 @@ from torch.nn import functional as F
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning.loggers import TensorBoardLogger
 
 import os
 import json, csv
@@ -41,9 +40,9 @@ def train():
     train_dataloader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=args.batch_size, num_workers=args.workers,
-            drop_last=False, shuffle=True, pin_memory=True, persistent_workers=True
+            drop_last=True, shuffle=True, pin_memory=True, persistent_workers=True
         )
-    print(f"Length Data: {len(train_dataset)}")  # Should be > 0
+
     # creates a copy of current code / files in the config folder
     save_code_to_conf(args.exp_dir) 
     
@@ -53,8 +52,6 @@ def train():
     callbacks = [callback, lr_monitor]
 
     model = CombinedModel(specs)
-
-    print(f"Model structure: {model}")  # Simple but effective overview
 
     # note on loading from checkpoint:
     # if resuming from training modulation, diffusion, or end-to-end, just load saved checkpoint 
@@ -77,21 +74,9 @@ def train():
     else:
         resume = None  
 
-    tb_logger = TensorBoardLogger(
-        save_dir=os.path.join("tensorboard_logs", args.exp_dir),
-        name="logs"
-    )
-
-    trainer = pl.Trainer(
-        accelerator='gpu',
-        devices=-1,
-        precision=32,
-        max_epochs=specs["num_epochs"],
-        callbacks=callbacks,
-        log_every_n_steps=1,
-        logger=tb_logger,
-        default_root_dir=os.path.join("tensorboard_logs", args.exp_dir)
-    )
+    # precision 16 can be unstable (nan loss); recommend using 32
+    trainer = pl.Trainer(accelerator='gpu', devices=-1, precision=32, max_epochs=specs["num_epochs"], callbacks=callbacks, log_every_n_steps=1,
+                        default_root_dir=os.path.join("tensorboard_logs", args.exp_dir))
     trainer.fit(model=model, train_dataloaders=train_dataloader, ckpt_path=resume)
 
     
