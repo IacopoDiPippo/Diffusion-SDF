@@ -21,7 +21,7 @@ class SdfLoader(base.Dataset):
         data_source, # path to points sampled around surface
         split_file, # json filepath which contains train/test classes and meshes 
         grid_source=None, # path to grid points; grid refers to sampling throughout the unit cube instead of only around the surface; necessary for preventing artifacts in empty space
-        samples_per_mesh=1600,
+        samples_per_mesh=16000,
         pc_size=1024,
         modulation_path=None # used for third stage of training; needs to be set in config file when some modulation training had been filtered
     ):

@@ -38,24 +38,32 @@ class BetaVAE(nn.Module):
         #print("kl standard deviation: ", self.kl_std)
 
         modules = []
+
         if hidden_dims is None:
-            hidden_dims = [32, 64, 128]
+            hidden_dims = [16, 32, 64, 128, 256, 64]
+
+        
+        strides = [1, 2, 2, 1, 2, 1]  # default: solo due con stride 2
+
+        assert len(strides) == len(hidden_dims), "Length of `strides` must match `hidden_dims`"
 
         self.hidden_dims = hidden_dims
 
         # Build Encoder
-        for h_dim in hidden_dims:
+        for h_dim, stride in zip(hidden_dims, strides):
             modules.append(
                 nn.Sequential(
-                    nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=2, padding=1),
+                    nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=stride, padding=1),
                     nn.BatchNorm3d(h_dim),
                     nn.LeakyReLU())
             )
             in_channels = h_dim
 
+
+
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
-        self.fc_var = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim) 
+        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim//2)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
+        self.fc_var = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim//2) 
 
 
         # Build Decoder
@@ -105,7 +113,8 @@ class BetaVAE(nn.Module):
 
     def forward(self, data: Tensor, **kwargs) -> Tensor:
         mu, log_var = self.encode(data)
-        z = self.reparameterize(mu, log_var)
+        #z = self.reparameterize(mu, log_var)
+        z = torch.cat([mu, log_var], dim=-1)
         return  [z, data, mu, log_var, z]
 
     # only using VAE loss

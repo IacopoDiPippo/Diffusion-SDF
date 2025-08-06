@@ -1,8 +1,19 @@
+# Escludi tutti i file in config/ tranne quelli .json
+config/*
+!config/**/*.json
+!config/*.json
+
+# Escludi .DS_Store (macOS)
 .DS_Store
+
+# Escludi cache di Python
 __pycache__/
+
+# Altri file e cartelle specifici
 all_models_renamed
 data/acronym/Mug
 data/grid_data/acronym/Mug
 config/stage1_sdf/code
 tensorboard_logs/
 shapenet_downlaod
+visual.ipynb

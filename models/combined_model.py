@@ -162,6 +162,17 @@ class CombinedModel(pl.LightningModule):
         print("Base_points", base_points.shape)
         print("BAsepoints:", torch.sum(base_points)) 
 
+        print("✅ Latent info:")
+        print("  Shape:", latent.shape)
+        print("  Dtype:", latent.dtype)
+        print("  Min:", latent.min().item())
+        print("  Max:", latent.max().item())
+        print("  Mean:", latent.mean().item())
+        print("  Std:", latent.std().item())
+        print("  Unique values:", torch.unique(latent).numel())
+        print("  All values equal?", torch.all(latent == latent.view(-1)[0]).item())
+
+
         # Check BPS encoding consistency
         if not hasattr(self, '_first_bps'):
             self._first_bps = base_points.detach().clone()
@@ -219,8 +230,11 @@ class CombinedModel(pl.LightningModule):
             pred_sdf=pred_sdf
         )
         
+        for name, param in self.sdf_model.named_parameters():
+            if "bias" in name or "weight" in name:
+                print(name, param.data.min().item(), param.data.max().item())
 
-        
+                
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss
         try:
