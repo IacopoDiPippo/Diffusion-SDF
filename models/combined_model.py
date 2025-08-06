@@ -117,7 +117,7 @@ class CombinedModel(pl.LightningModule):
         sdf_loss = F.l1_loss(pred_sdf.squeeze(), gt.squeeze(), reduction='none')
         sdf_loss = reduce(sdf_loss, 'b ... -> b (...)', 'mean').mean()
 
-        loss = sdf_loss + vae_loss
+        loss = sdf_loss 
 
         loss_dict =  {"sdf": sdf_loss, "vae": vae_loss}
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
