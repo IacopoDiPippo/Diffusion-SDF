@@ -80,7 +80,7 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
         save_samples(surface_output_dir, "sdf_data.csv", all_points, all_sdf)
 
         # Structured grid sampling
-        grid_points = sample_uniform_grid(128)
+        grid_points = sample_uniform_grid(64)
         grid_sdf = compute_signed_distance(verts, faces, grid_points)
         save_samples(grid_output_dir, "grid_gt.csv", grid_points, grid_sdf)
 
