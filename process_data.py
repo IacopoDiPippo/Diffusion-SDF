@@ -48,6 +48,10 @@ def save_samples(output_dir: str, filename: str, points: np.ndarray, distances: 
     np.savetxt(path, np.hstack([points, distances.reshape(-1, 1)]), delimiter=',')
     return path
 
+def scale_sdf(sdf, factor_neg=10.0, factor_pos=1.0):
+    sdf_scaled = np.where(sdf < 0, sdf * factor_neg, sdf * factor_pos)
+    return sdf_scaled
+
 def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir: str) -> str:
     """Process a single model and save both surface and grid samples"""
     obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
@@ -71,8 +75,8 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
         noisy_005 = surface_points + np.random.normal(0, 0.005, surface_points.shape)
         noisy_0005 = surface_points + np.random.normal(0, 0.0005, surface_points.shape)
 
-        sdf_005 = compute_signed_distance(verts, faces, noisy_005)
-        sdf_0005 = compute_signed_distance(verts, faces, noisy_0005)
+        sdf_005 = scale_sdf(compute_signed_distance(verts, faces, noisy_005))
+        sdf_0005 = scale_sdf(compute_signed_distance(verts, faces, noisy_0005))
 
         all_points = np.vstack([surface_points, noisy_005, noisy_0005])
         all_sdf = np.concatenate([surface_sdf, sdf_005, sdf_0005])
@@ -81,7 +85,7 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
 
         # Structured grid sampling
         grid_points = sample_uniform_grid(64)
-        grid_sdf = compute_signed_distance(verts, faces, grid_points)
+        grid_sdf = scale_sdf(compute_signed_distance(verts, faces, grid_points))
         save_samples(grid_output_dir, "grid_gt.csv", grid_points, grid_sdf)
 
         return "success"
