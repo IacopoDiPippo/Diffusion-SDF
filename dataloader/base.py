@@ -79,11 +79,10 @@ class Dataset(torch.utils.data.Dataset):
             neg_sample = pos_tensor[neg_idx]
         else:
             neg_sample = neg_tensor[neg_idx]
-        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num biggerzero-level points: {pos_sample.shape[0]}, num  lower zero-level points: {neg_sample.shape[0]}")
+        
         pc = f[f[:,-1]==0][:,:3]
 
-        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num zero-level points: {pc.shape[0]}, requested pc_size: {pc_size}")
-
+  
         pc_idx = torch.randperm(pc.shape[0])[:pc_size]
         pc = pc[pc_idx]
 
@@ -113,7 +112,6 @@ class Dataset(torch.utils.data.Dataset):
         
         pc = f[f[:,-1]==0][:,:3]
 
-        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num zero-level points: {pc.shape[0]}, requested pc_size: {pc_size}")
 
         pc_idx = torch.randperm(pc.shape[0])[:pc_size]
         pc = pc[pc_idx]

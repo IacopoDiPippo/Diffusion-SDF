@@ -141,7 +141,7 @@ class CombinedModel(pl.LightningModule):
             spc2 = sorted_pointcloud(pc2)
             return torch.allclose(spc1, spc2, atol=tol)
         
-        print("Input checksum:", torch.sum(pc))
+        """print("Input checksum:", torch.sum(pc))
         # Save first batch PC if not done yet
         if hasattr(self, '_prev_pc'):
             same_pc = are_pointclouds_equal(pc, self._prev_pc)
@@ -150,12 +150,12 @@ class CombinedModel(pl.LightningModule):
 
     
 
-        print("Input checksum:", torch.sum(pc))
+        print("Input checksum:", torch.sum(pc))"""
         base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
-        print("Input pointcloud shape:", pc.shape)         # (B, N, 3)
+        """print("Input pointcloud shape:", pc.shape)         # (B, N, 3)
         print("Fixed BPS grid shape:", self.bps_grid.shape)        # (32768, 3) if 32³
         print("BPS grid min/max:", self.bps_grid.min(), self.bps_grid.max())
         print("BPS grid checksum:", torch.sum(self.bps_grid))      # Should be constant
@@ -182,7 +182,7 @@ class CombinedModel(pl.LightningModule):
             if diff_bps > 1e-6:
                 print(f"❗ BPS encoding changed. Norm diff: {diff_bps:.6f}")
             else:
-                print("✅ BPS encoding unchanged.")
+                print("✅ BPS encoding unchanged.")"""
 
         # Single debug call at the end
         self.debug_shapes(
@@ -195,7 +195,7 @@ class CombinedModel(pl.LightningModule):
             latent=latent,
         )
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
-        print("✅ pred_sdf info:")
+        """print("✅ pred_sdf info:")
         print("  Type:", type(pred_sdf))
         print("  Shape:", pred_sdf.shape)
         print("  Dtype:", pred_sdf.dtype)
@@ -232,7 +232,7 @@ class CombinedModel(pl.LightningModule):
         
         for name, param in self.sdf_model.named_parameters():
             if "bias" in name or "weight" in name:
-                print(name, param.data.min().item(), param.data.max().item())
+                print(name, param.data.min().item(), param.data.max().item())"""
 
                 
         # STEP 3: losses for VAE and SDF
