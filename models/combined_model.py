@@ -138,16 +138,7 @@ class CombinedModel(pl.LightningModule):
         reconstructed_base_point, latent = out[0], out[-1]
         
 
-        # Single debug call at the end
-        self.debug_shapes(
-            xyz=xyz,
-            gt=gt,
-            pc=pc,
-            base_points=base_points,
-            vae_output=out,
-            reconstructed_base_point=reconstructed_base_point,
-            latent=latent,
-        )
+
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
         """print("✅ pred_sdf info:")
         print("  Type:", type(pred_sdf))
