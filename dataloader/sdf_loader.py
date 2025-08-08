@@ -7,7 +7,7 @@ import random
 import torch
 import torch.utils.data
 from . import base 
-
+from bps import bps
 import pandas as pd 
 import numpy as np
 import csv, json
@@ -35,7 +35,10 @@ class SdfLoader(base.Dataset):
 
         self.grid_source = grid_source
         #print("grid source: ", grid_source)
-    
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.bps_grid = self._create_bps_grid(grid_size=32, radius=1.5)
+
         if grid_source:
             self.grid_files = self.get_instance_filenames(grid_source, split_file, gt_filename="grid_gt.csv", filter_modulation_path=modulation_path)
             self.grid_files = self.grid_files[0:subsample]
@@ -49,14 +52,33 @@ class SdfLoader(base.Dataset):
             assert len(self.grid_files) == len(self.gt_files)
 
 
-        # load all csv files first 
         print("loading all {} files into memory...".format(len(self.gt_files)))
-        lst = []
+        loaded_data = []
+        preprocessed_pcs = []
+        preprocessed_bps = []
+
         with tqdm(self.gt_files) as pbar:
             for i, f in enumerate(pbar):
                 pbar.set_description("Files loaded: {}/{}".format(i, len(self.gt_files)))
-                lst.append(torch.from_numpy(pd.read_csv(f, sep=',',header=None).values))
-        self.gt_files = lst
+                
+                # Load CSV file as tensor
+                data = torch.from_numpy(pd.read_csv(f, sep=',', header=None).values)
+                
+                # Get pointcloud from loaded data
+                pc = self.get_pointcloud(data, load_from_path=False)
+                
+                # Apply basis point encoding to the pointcloud
+                pc_bps = self.get_base_points(pc)
+                
+                # Save all for later use
+                loaded_data.append(data)
+                preprocessed_pcs.append(pc)
+                preprocessed_bps.append(pc_bps)
+
+        self.gt_files = loaded_data          # raw loaded CSV tensors
+        self.preprocessed_pcs = preprocessed_pcs   # raw pointclouds (N, 3)
+        self.preprocessed_bps = preprocessed_bps   # basis point encoded tensors
+
 
 
   
@@ -66,7 +88,7 @@ class SdfLoader(base.Dataset):
 
         _, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         
-        pc = self.get_pointcloud(self.gt_files[idx], load_from_path=False)
+        basis_point = self.preprocessed_bps[idx]
         if self.grid_source is not None:
             grid_count = self.samples_per_mesh - near_surface_count
             _, grid_xyz, grid_gt = self.labeled_sampling(self.grid_files[idx], grid_count, pc_size=grid_count, load_from_path=False)
@@ -80,11 +102,54 @@ class SdfLoader(base.Dataset):
         data_dict = {
                     "xyz":sdf_xyz.float().squeeze(),
                     "gt_sdf":sdf_gt.float().squeeze(), 
-                    "point_cloud":pc.float().squeeze(),
+                    "basis_point":basis_point.float().squeeze(),
                     }
 
         return data_dict
   
+
+    def _create_bps_grid(self, grid_size=32, radius=1.5):
+        """Create a fixed BPS reference grid."""
+        bps_grid_np = bps.generate_grid_basis(
+            grid_size=grid_size,
+            n_dims=3,
+            minv=-radius,
+            maxv=radius
+        )
+        return torch.from_numpy(bps_grid_np).float().to(self.device)
+
+    def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize a single pointcloud and encode it into BPS features 
+        using a fixed, precomputed BPS grid basis.
+
+        Parameters:
+            pointcloud: torch.Tensor, shape (N, 3)
+                Single point cloud.
+
+        Returns:
+            torch.Tensor with BPS encoding of shape (n_bps_points, 3)
+        """
+        # Convert to numpy for bps operations
+        pointcloud_np = pointcloud.detach().cpu().numpy()  # shape (N, 3)
+
+        # Normalize (assuming bps.normalize can handle (N,3) arrays)
+        pc_normalized = bps.normalize(pointcloud_np)       # shape (N, 3)
+
+        # Check if the fixed bps_grid has changed (should not change!)
+        current_grid = self.bps_grid.cpu().numpy()
+       
+        # Encode using fixed custom BPS grid
+        x_bps = bps.encode(
+            pc_normalized,
+            bps_arrangement='custom',
+            custom_basis=current_grid,
+            bps_cell_type='deltas',
+            n_jobs=1
+        )  # output shape: (n_bps_points, 3)
+
+        return torch.from_numpy(x_bps).float().to(self.device)
+
 
     def __len__(self):
         return len(self.gt_files)

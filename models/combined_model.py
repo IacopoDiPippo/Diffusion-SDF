@@ -128,61 +128,15 @@ class CombinedModel(pl.LightningModule):
     def train_modulation_base_points(self, x):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
-        pc = x['point_cloud']  # (B, 1024, 3)
-        def sorted_pointcloud(pc: torch.Tensor) -> torch.Tensor:
-            # pc shape: (B, N, 3)
-            # Sort points along N by coordinate (e.g. lexicographically by x, then y, then z)
-            sorted_pc, _ = torch.sort(pc, dim=1)  # sort points along dimension N
-            return sorted_pc
-
-        def are_pointclouds_equal(pc1: torch.Tensor, pc2: torch.Tensor, tol=1e-6) -> bool:
-            # Sort both pointclouds and compare
-            spc1 = sorted_pointcloud(pc1)
-            spc2 = sorted_pointcloud(pc2)
-            return torch.allclose(spc1, spc2, atol=tol)
+        base_points = x['basis_point']  # (B, 1024, 3)
         
-        """print("Input checksum:", torch.sum(pc))
-        # Save first batch PC if not done yet
-        if hasattr(self, '_prev_pc'):
-            same_pc = are_pointclouds_equal(pc, self._prev_pc)
-            print(f"Pointcloud same as previous iteration (invariant to permutation)? {same_pc}")
-        self._prev_pc = pc.clone()
+        
+   
 
-    
-
-        print("Input checksum:", torch.sum(pc))"""
-        base_points = self.get_base_points(pc)  # (B, 32, 32, 32, 3)
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
-        """print("Input pointcloud shape:", pc.shape)         # (B, N, 3)
-        print("Fixed BPS grid shape:", self.bps_grid.shape)        # (32768, 3) if 32³
-        print("BPS grid min/max:", self.bps_grid.min(), self.bps_grid.max())
-        print("BPS grid checksum:", torch.sum(self.bps_grid))      # Should be constant
-        print("Base_points", base_points.shape)
-        print("BAsepoints:", torch.sum(base_points)) 
-
-        print("✅ Latent info:")
-        print("  Shape:", latent.shape)
-        print("  Dtype:", latent.dtype)
-        print("  Min:", latent.min().item())
-        print("  Max:", latent.max().item())
-        print("  Mean:", latent.mean().item())
-        print("  Std:", latent.std().item())
-        print("  Unique values:", torch.unique(latent).numel())
-        print("  All values equal?", torch.all(latent == latent.view(-1)[0]).item())
-
-
-        # Check BPS encoding consistency
-        if not hasattr(self, '_first_bps'):
-            self._first_bps = base_points.detach().clone()
-            print("✅ Saved initial BPS encoding for comparison.")
-        else:
-            diff_bps = np.linalg.norm((self._first_bps - base_points).cpu().numpy())
-            if diff_bps > 1e-6:
-                print(f"❗ BPS encoding changed. Norm diff: {diff_bps:.6f}")
-            else:
-                print("✅ BPS encoding unchanged.")"""
+        
 
         # Single debug call at the end
         self.debug_shapes(
@@ -230,9 +184,7 @@ class CombinedModel(pl.LightningModule):
             pred_sdf=pred_sdf
         )
         
-        for name, param in self.sdf_model.named_parameters():
-            if "bias" in name or "weight" in name:
-                print(name, param.data.min().item(), param.data.max().item())"""
+       """
 
                 
         # STEP 3: losses for VAE and SDF
