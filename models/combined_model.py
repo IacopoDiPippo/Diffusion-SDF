@@ -130,7 +130,7 @@ class CombinedModel(pl.LightningModule):
         gt = x['gt_sdf']  # (B, N)
         base_points = x['basis_point']  # (B, 1024, 3)
         
-        
+        print("Shape of base_points:", base_points.shape)
    
 
         base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
