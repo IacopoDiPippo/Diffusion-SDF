@@ -13,8 +13,6 @@ class CombinedModel(pl.LightningModule):
         super().__init__()
         self.specs = specs
 
-        self.all_latent_means = []
-        self.all_pred_means = []
 
         self.task = specs['training_task'] # 'combined' or 'modulation' or 'diffusion'
 
@@ -182,13 +180,14 @@ class CombinedModel(pl.LightningModule):
         latent_mean_per_sample = latent.mean(dim=1)  # shape: (B,)
         pred_mean_per_sample = pred_sdf.mean(dim=1)  # shape: (B,)
 
-        self.all_latent_means.extend(latent_mean_per_sample.tolist())
-        self.all_pred_means.extend(pred_mean_per_sample.tolist())
+        # Mean for each sample in batch
+        latent_mean_per_sample = latent.mean(dim=1)  # shape: (B,)
+        pred_mean_per_sample = pred_sdf.mean(dim=1)  # shape: (B,)
 
-    if epoch % 10 == 0:
-        print(f"Epoch {epoch}: Latent means per object = {all_latent_means}")
-        print(f"Epoch {epoch}: Pred means per object   = {all_pred_means}")
-                
+        
+        print(f": Latent means = {latent_mean_per_sample.tolist()}")
+        print(f": Pred means   = {pred_mean_per_sample.tolist()}")
+                    
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss
         try:
