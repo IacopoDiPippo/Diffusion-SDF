@@ -175,12 +175,12 @@ class CombinedModel(pl.LightningModule):
             pred_sdf=pred_sdf
         )
         
-       """
+       
 
         diffs = latent.unsqueeze(1) - latent.unsqueeze(0)  # (B, B, N)
         norms = torch.norm(diffs, dim=2)  # (B, B)
         print(f"E- Norm matrix:\n{norms}")
-
+        """
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss
         try:
