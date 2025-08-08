@@ -92,17 +92,19 @@ def get_category_id(shapenet_root: str, class_name: str) -> str:
             return entry["synsetId"]
     raise ValueError(f"Class name '{class_name}' not found in taxonomy")
 
-def process_single_class(shapenet_root: str, class_name: str, acronym_output: str, grid_output: str):
-    cat_id = get_category_id(shapenet_root, class_name)
+def process_single_class(shapenet_root: str, category: str, acronym_output: str, grid_output: str):
+    # category can be either a class name or a ShapeNet synset ID
+    if os.path.isdir(os.path.join(shapenet_root, category)):
+        cat_id = category  # It's already an ID or folder name
+        class_name = category
+    else:
+        raise ValueError(f"'{category}' is not a valid category folder inside {shapenet_root}")
+
     cat_dir = os.path.join(shapenet_root, cat_id)
-
-    if not os.path.exists(cat_dir):
-        raise FileNotFoundError(f"Category directory not found for {class_name} at {cat_dir}")
-
     model_ids = [d for d in os.listdir(cat_dir) if os.path.isdir(os.path.join(cat_dir, d))]
     stats = {"success": 0, "skipped": 0, "failed": 0}
 
-    print(f"\nProcessing category '{class_name}' ({cat_id}) with {len(model_ids)} models...")
+    print(f"\nProcessing category '{class_name}' with {len(model_ids)} models...")
     for obj_id in tqdm(model_ids, desc=f"Category {class_name}"):
         obj_path = os.path.join(cat_dir, obj_id, MODEL_FILE_PATH)
         if not os.path.exists(obj_path):
@@ -118,6 +120,7 @@ def process_single_class(shapenet_root: str, class_name: str, acronym_output: st
     print(f"Successful: {stats['success']}")
     print(f"Skipped:    {stats['skipped']}")
     print(f"Failed:     {stats['failed']}")
+
 
 if __name__ == "__main__":
     import argparse
