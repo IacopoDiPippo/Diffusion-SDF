@@ -136,7 +136,7 @@ class SdfLoader(base.Dataset):
         pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
 
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
-        pc_normalized = bps.normalize(pointcloud_np)       # shape (N, 3)
+        pc_normalized = bps.normalize(pointcloud_np)       # shape (1, N, 3)
 
         # Check if the fixed bps_grid has changed (should not change!)
         current_grid = self.bps_grid.cpu().numpy()
@@ -148,9 +148,9 @@ class SdfLoader(base.Dataset):
             custom_basis=current_grid,
             bps_cell_type='deltas',
             n_jobs=1
-        )  # output shape: (n_bps_points, 3)
+        )  # output shape: (1, n_bps_points, 3)
 
-        return torch.from_numpy(x_bps).float()
+        return return torch.from_numpy(x_bps).float().squeeze(0)
 
 
     def __len__(self):
