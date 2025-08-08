@@ -3,10 +3,10 @@ import numpy as np
 import trimesh
 import point_cloud_utils as pcu
 from tqdm import tqdm
-import json
+import argparse
 
+# Constants
 MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
-TAXONOMY_FILE = "taxonomy.json"  # ShapeNet taxonomy file (maps names to IDs)
 
 def make_watertight_with_pcu(mesh_path: str):
     mesh = trimesh.load(mesh_path, force='mesh')
@@ -48,10 +48,10 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
     obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
     surface_csv = os.path.join(surface_output_dir, "sdf_data.csv")
     grid_csv = os.path.join(grid_output_dir, "grid_gt.csv")
-
+    
     if os.path.exists(surface_csv) and os.path.exists(grid_csv):
         return "skipped"
-
+    
     try:
         verts, faces = make_watertight_with_pcu(obj_path)
         verts = normalize_mesh(verts)
@@ -79,53 +79,34 @@ def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir
         print(f"Error processing {obj_id}: {str(e)}")
         return "failed"
 
-def get_category_id(shapenet_root: str, class_name: str) -> str:
-    taxonomy_path = os.path.join(shapenet_root, TAXONOMY_FILE)
-    if not os.path.exists(taxonomy_path):
-        raise FileNotFoundError(f"Taxonomy file not found at {taxonomy_path}")
+def process_class(shapenet_root: str, category_id: str, acronym_output: str, grid_output: str):
+    cat_dir = os.path.join(shapenet_root, category_id)
+    if not os.path.exists(cat_dir):
+        raise FileNotFoundError(f"Category directory not found: {cat_dir}")
 
-    with open(taxonomy_path, "r") as f:
-        taxonomy = json.load(f)
-
-    for entry in taxonomy:
-        if entry["name"].lower() == class_name.lower():
-            return entry["synsetId"]
-    raise ValueError(f"Class name '{class_name}' not found in taxonomy")
-
-def process_single_class(shapenet_root: str, category: str, acronym_output: str, grid_output: str):
-    # category can be either a class name or a ShapeNet synset ID
-    if os.path.isdir(os.path.join(shapenet_root, category)):
-        cat_id = category  # It's already an ID or folder name
-        class_name = category
-    else:
-        raise ValueError(f"'{category}' is not a valid category folder inside {shapenet_root}")
-
-    cat_dir = os.path.join(shapenet_root, cat_id)
     model_ids = [d for d in os.listdir(cat_dir) if os.path.isdir(os.path.join(cat_dir, d))]
     stats = {"success": 0, "skipped": 0, "failed": 0}
-
-    print(f"\nProcessing category '{class_name}' with {len(model_ids)} models...")
-    for obj_id in tqdm(model_ids, desc=f"Category {class_name}"):
+    
+    print(f"Processing {len(model_ids)} models for category {category_id}...")
+    for obj_id in tqdm(model_ids, desc=f"Category {category_id}"):
         obj_path = os.path.join(cat_dir, obj_id, MODEL_FILE_PATH)
         if not os.path.exists(obj_path):
             stats["failed"] += 1
             continue
-
-        surface_dir = os.path.join(acronym_output, class_name, obj_id)
-        grid_dir = os.path.join(grid_output, "acronym", class_name, obj_id)
+        
+        surface_dir = os.path.join(acronym_output, category_id, obj_id)
+        grid_dir = os.path.join(grid_output, "acronym", category_id, obj_id)
         result = process_single_model(obj_path, surface_dir, grid_dir)
         stats[result] += 1
-
+    
     print("\nProcessing Results:")
     print(f"Successful: {stats['success']}")
     print(f"Skipped:    {stats['skipped']}")
     print(f"Failed:     {stats['failed']}")
 
-
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Process ShapeNet class to SDF data")
-    parser.add_argument("--class_name", type=str, required=True, help="Class name (e.g., mug, chair)")
+    parser = argparse.ArgumentParser(description="Process ShapeNet category")
+    parser.add_argument("--class_id", type=str, required=True, help="ShapeNet synset ID (e.g., 04256520 for couch)")
     parser.add_argument("--shapenet_root", type=str, default="shapenet_download/ShapeNetCore.v2")
     parser.add_argument("--acronym_output", type=str, default="data/acronym")
     parser.add_argument("--grid_output", type=str, default="data/grid_data")
@@ -134,4 +115,4 @@ if __name__ == "__main__":
     os.makedirs(args.acronym_output, exist_ok=True)
     os.makedirs(os.path.join(args.grid_output, "acronym"), exist_ok=True)
 
-    process_single_class(args.shapenet_root, args.class_name, args.acronym_output, args.grid_output)
+    process_class(args.shapenet_root, args.class_id, args.acronym_output, args.grid_output)
