@@ -150,7 +150,7 @@ class SdfLoader(base.Dataset):
             n_jobs=1
         )  # output shape: (1, n_bps_points, 3)
 
-        return return torch.from_numpy(x_bps).float().squeeze(0)
+        return torch.from_numpy(x_bps).float().squeeze(0)
 
 
     def __len__(self):
