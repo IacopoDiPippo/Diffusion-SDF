@@ -142,7 +142,7 @@ class SdfLoader(base.Dataset):
         current_grid = self.bps_grid.cpu().numpy()
        
         # Encode using fixed custom BPS grid
-        x_bps = bps.encode(
+        x_bps_grid = bps.encode(
             pc_normalized,
             bps_arrangement='custom',
             custom_basis=current_grid,
