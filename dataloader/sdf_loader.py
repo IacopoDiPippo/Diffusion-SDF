@@ -133,6 +133,9 @@ class SdfLoader(base.Dataset):
         # Convert to numpy for bps operations
         pointcloud_np = pointcloud.detach().cpu().numpy()  # shape (N, 3)
 
+        # Add batch dimension (needed for bps functions expecting [batch, points, dims])
+        pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
+
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
         pc_normalized = bps.normalize(pointcloud_np)       # shape (N, 3)
 
