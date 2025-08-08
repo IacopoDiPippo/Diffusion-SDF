@@ -130,10 +130,10 @@ class CombinedModel(pl.LightningModule):
         gt = x['gt_sdf']  # (B, N)
         base_points = x['basis_point']  # (B, 1024, 3)
         
-        print("Shape of base_points:", base_points.shape)
+    
    
 
-        base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 3, 32, 32, 32)
+        
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
         

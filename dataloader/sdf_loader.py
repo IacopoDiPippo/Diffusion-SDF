@@ -150,7 +150,14 @@ class SdfLoader(base.Dataset):
             n_jobs=1
         )  # output shape: (1, n_bps_points, 3)
 
-        return torch.from_numpy(x_bps).float().squeeze(0)
+        # Reshape to (1, 32, 32, 32, 3)
+        x_bps_grid = x_bps_grid.reshape(1, 32, 32, 32, 3)
+
+        # Permute to (1, 3, 32, 32, 32)
+        x_bps_grid = x_bps_grid.transpose(0, 4, 1, 2, 3)
+
+        return torch.from_numpy(x_bps_grid).float().squeeze(0)
+
 
 
     def __len__(self):
