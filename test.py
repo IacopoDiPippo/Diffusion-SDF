@@ -68,7 +68,7 @@ def test_modulations():
 
             #print("mesh filename: ", mesh_filename)
             # N is the grid resolution for marching cubes; set max_batch to largest number gpu can hold
-            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=32, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, recon, mesh_filename, N=64, max_batch=2**21, from_plane_features=True)
 
             # load the created mesh (mesh_filename), and compare with input point cloud
             # to calculate and log chamfer distance 
@@ -130,7 +130,7 @@ def test_generation():
         plane_features = model.vae_model.decode(samples)
         for i in range(len(plane_features)):
             plane_feature = plane_features[i].unsqueeze(0)
-            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=32, max_batch=2**21, from_plane_features=True)
+            mesh.create_mesh(model.sdf_model, plane_feature, recon_dir+"/{}_recon".format(i), N=64, max_batch=2**21, from_plane_features=True)
             
     else:
         # load dataset, dataloader, model checkpoint
@@ -182,7 +182,7 @@ def test_generation():
                 
                 for i in range(len(plane_features)):
                     plane_feature = plane_features[i].unsqueeze(0)
-                    mesh.create_mesh(model.sdf_model, plane_feature, outdir+"/{}_recon".format(i), N=32, max_batch=2**21, from_plane_features=True)
+                    mesh.create_mesh(model.sdf_model, plane_feature, outdir+"/{}_recon".format(i), N=64, max_batch=2**21, from_plane_features=True)
             
 
 

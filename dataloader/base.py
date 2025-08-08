@@ -59,7 +59,6 @@ class Dataset(torch.utils.data.Dataset):
         half = int(subsample / 2) 
         neg_tensor = f[f[:,-1]<0]
         pos_tensor = f[f[:,-1]>0]
-        print(f"[DEBUG] f path: {f if isinstance(f, str) else 'loaded tensor'}, num biggerzero-level points: {pos_tensor.shape[0]}, num  lower zero-level points: {neg_tensor.shape[0]}")
         if pos_tensor.shape[0] < half:
             pos_idx = torch.randint(0, pos_tensor.shape[0], (half,))
         else:

@@ -79,9 +79,9 @@ class SdfModel(pl.LightningModule):
         # Expand base features to match point count
         base_features = base_features.unsqueeze(1)  # [B, 1, D]
         base_features = base_features.expand(-1, xyz.shape[1], -1)  # [B, N, D]
-        print("Shape of base features_", base_features.shape)
+        """ print("Shape of base features_", base_features.shape)
         print("Base point feature checksum:", base_features.sum())
-        print("XYZ checksum:", xyz.sum())
+        print("XYZ checksum:", xyz.sum())"""
         combined_input = torch.cat((xyz, base_features), dim=-1)
         pred_sdf = self.model(combined_input)  # [B, num_points]
         
