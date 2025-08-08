@@ -36,7 +36,6 @@ class SdfLoader(base.Dataset):
         self.grid_source = grid_source
         #print("grid source: ", grid_source)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.bps_grid = self._create_bps_grid(grid_size=32, radius=1.5)
 
         if grid_source:
@@ -116,7 +115,7 @@ class SdfLoader(base.Dataset):
             minv=-radius,
             maxv=radius
         )
-        return torch.from_numpy(bps_grid_np).float().to(self.device)
+        return torch.from_numpy(bps_grid_np).float()
 
     def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
         """
@@ -151,7 +150,7 @@ class SdfLoader(base.Dataset):
             n_jobs=1
         )  # output shape: (n_bps_points, 3)
 
-        return torch.from_numpy(x_bps).float().to(self.device)
+        return torch.from_numpy(x_bps).float()
 
 
     def __len__(self):
