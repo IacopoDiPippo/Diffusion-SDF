@@ -32,7 +32,7 @@ def test_modulations():
     # load dataset, dataloader, model checkpoint
     test_split = json.load(open(specs["TestSplit"]))
     test_dataset = PCloader(specs["DataSource"], test_split, pc_size=specs.get("PCsize",1024), return_filename=True)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, num_workers=0)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, num_workers=0, shuffle= True)
 
     ckpt = "{}.ckpt".format(args.resume) if args.resume=='last' else "epoch={}.ckpt".format(args.resume)
     resume = os.path.join(args.exp_dir, ckpt)
