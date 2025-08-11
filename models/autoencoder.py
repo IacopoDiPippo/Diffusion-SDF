@@ -62,8 +62,8 @@ class BetaVAE(nn.Module):
 
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim//2)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
-        self.fc_var = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim//2) 
+        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
+        self.fc_var = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim) 
 
 
         # Build Decoder
@@ -113,8 +113,7 @@ class BetaVAE(nn.Module):
 
     def forward(self, data: Tensor, **kwargs) -> Tensor:
         mu, log_var = self.encode(data)
-        #z = self.reparameterize(mu, log_var)
-        z = torch.cat([mu, log_var], dim=-1)
+        z = self.reparameterize(mu, log_var)
         return  [z, data, mu, log_var, z]
 
     # only using VAE loss
