@@ -212,22 +212,22 @@ class CombinedModel(pl.LightningModule):
             gt_np = gt_np[0]
             pred_np = pred_np[0]
 
+            # Take only the first batch for visualization
+            xyz_vis = torch.from_numpy(xyz_np)
+            gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
+            pred_vis = torch.from_numpy(pred_np).unsqueeze(-1)
+
             # Save GT file: x,y,z,gt
-            visual_data = torch.cat(
-                (xyz, gt), dim=1
-            ).detach().cpu().numpy()
+            visual_data = torch.cat((xyz_vis, gt_vis), dim=1).cpu().numpy()
             visual_path = os.path.join(save_dir, "visual.csv")
             np.savetxt(visual_path, visual_data, delimiter=",", header="x,y,z,gt", comments="")
             print(f"Saved GT visualization to {visual_path}")
 
             # Save Prediction file: x,y,z,pred
-            output_data = torch.cat(
-                (xyz, pred_sdf), dim=1
-            ).detach().cpu().numpy()
+            output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
             output_path = os.path.join(save_dir, "output.csv")
             np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
             print(f"Saved prediction visualization to {output_path}")
-
         # Increment counter
         self.counter = getattr(self, "counter", 0) + 1
 
