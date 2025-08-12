@@ -197,8 +197,43 @@ class CombinedModel(pl.LightningModule):
         loss_dict =  {"sdf": sdf_loss, "vae": vae_loss}
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
+        # ==== SAVE DEBUG CSVs ====
+        if getattr(self, "counter", 0) == 300:
+            save_dir = "visual"
+            os.makedirs(save_dir, exist_ok=True)
+
+            # Move to CPU and convert to numpy
+            xyz_np = xyz.detach().cpu().numpy()
+            gt_np = gt.detach().cpu().numpy()
+            pred_np = pred_sdf.detach().cpu().numpy()
+
+            # Take only the first batch for visualization
+            xyz_np = xyz_np[0]
+            gt_np = gt_np[0]
+            pred_np = pred_np[0]
+
+            # Save GT file: x,y,z,gt
+            visual_data = torch.cat(
+                (xyz, gt), dim=1
+            ).detach().cpu().numpy()
+            visual_path = os.path.join(save_dir, "visual.csv")
+            np.savetxt(visual_path, visual_data, delimiter=",", header="x,y,z,gt", comments="")
+            print(f"Saved GT visualization to {visual_path}")
+
+            # Save Prediction file: x,y,z,pred
+            output_data = torch.cat(
+                (xyz, pred_sdf), dim=1
+            ).detach().cpu().numpy()
+            output_path = os.path.join(save_dir, "output.csv")
+            np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
+            print(f"Saved prediction visualization to {output_path}")
+
+        # Increment counter
+        self.counter = getattr(self, "counter", 0) + 1
+
         return loss
 
+    
 
     def train_diffusion(self, x):
 
