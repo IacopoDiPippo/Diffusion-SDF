@@ -12,7 +12,7 @@ class CombinedModel(pl.LightningModule):
     def __init__(self, specs):
         super().__init__()
         self.specs = specs
-
+        self.counter = 0
 
         self.task = specs['training_task'] # 'combined' or 'modulation' or 'diffusion'
 
@@ -198,7 +198,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 300:
+        if getattr(self, "counter", 0) == 10:
             save_dir = "visual"
             os.makedirs(save_dir, exist_ok=True)
 
