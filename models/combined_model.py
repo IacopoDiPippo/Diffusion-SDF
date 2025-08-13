@@ -5,6 +5,8 @@ from torch.nn import functional as F
 from bps import bps
 import pytorch_lightning as pl
 from bps import bps
+import trimesh
+from skimage import measure
 # add paths in model/__init__.py for new models
 from models import * 
 
@@ -217,6 +219,8 @@ class CombinedModel(pl.LightningModule):
             gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
             pred_vis = torch.from_numpy(pred_np).unsqueeze(-1)
 
+            print("xyz_vis:", xyz_vis.shape)
+            print("pred_vis before squeeze:", pred_vis.shape)
             # Save GT file: x,y,z,gt
             visual_data = torch.cat((xyz_vis, gt_vis), dim=1).cpu().numpy()
             visual_path = os.path.join(save_dir, "visual.csv")
@@ -228,7 +232,57 @@ class CombinedModel(pl.LightningModule):
             output_path = os.path.join(save_dir, "output.csv")
             np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
             print(f"Saved prediction visualization to {output_path}")
-        # Increment counter
+            # Increment counter
+
+            # ==================== NEW LATENT-ONLY GENERATION ====================
+            print("🔍 Sampling directly from latent space for VAE-only generation...")
+
+            # 1. Sample a random latent from N(0,1)
+            latent_dim = self.vae_model.latent_dim  # adjust if attribute name differs
+            z_random = torch.randn(1, latent_dim, device=xyz.device)
+
+            # 3. Make a uniform 48x48x48 grid of coordinates in [-1,1]
+            coords_lin = torch.linspace(-1, 1, 48, device=xyz.device)
+            grid_x, grid_y, grid_z = torch.meshgrid(coords_lin, coords_lin, coords_lin, indexing="ij")
+            grid_points = torch.stack((grid_x, grid_y, grid_z), dim=-1).view(-1, 3).unsqueeze(0)  # (1, 110592, 3)
+
+            # 4. Predict SDF on this grid using the reconstructed base points
+            # 1. Ottieni pred_sdf_rand
+            pred_sdf_rand = self.sdf_model.forward_with_base_features(
+                z_random, grid_points
+            )  # (1, N)
+
+            # 2. Porta tutto su CPU
+            grid_points_cpu = grid_points.squeeze(0).detach().cpu()  # (N, 3)
+            pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu()   # (N,)
+
+            # 3. Determina risoluzione (assumendo griglia cubica)
+            N = pred_sdf_cpu.shape[0]
+            res = round(N ** (1/3))  # e.g. 48 se N = 110592
+
+            # 4. Reshape SDF in una griglia 3D
+            sdf_grid = pred_sdf_cpu.numpy().reshape((res, res, res))
+
+            # 5. Marching Cubes a livello 0 (superficie SDF)
+            verts, faces, normals, _ = measure.marching_cubes(sdf_grid, level=0)
+
+            # 6. Converti coordinate voxel in coordinate originali
+            x_min, y_min, z_min = grid_points_cpu.min(dim=0).values.numpy()
+            x_max, y_max, z_max = grid_points_cpu.max(dim=0).values.numpy()
+
+            verts_world = np.stack([
+                x_min + verts[:, 0] * (x_max - x_min) / (res - 1),
+                y_min + verts[:, 1] * (y_max - y_min) / (res - 1),
+                z_min + verts[:, 2] * (z_max - z_min) / (res - 1)
+            ], axis=-1)
+
+            # 7. Crea mesh e salva
+            mesh = trimesh.Trimesh(vertices=verts_world, faces=faces, vertex_normals=normals)
+            mesh_path = os.path.join(save_dir, "latent_mesh.obj")
+            mesh.export(mesh_path)
+
+            print(f"✅ Mesh saved to {mesh_path}")
+
         self.counter = getattr(self, "counter", 0) + 1
 
         return loss
