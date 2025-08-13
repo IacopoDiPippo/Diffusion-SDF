@@ -217,10 +217,11 @@ class CombinedModel(pl.LightningModule):
             # Take only the first batch for visualization
             xyz_vis = torch.from_numpy(xyz_np)
             gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
-            pred_vis = torch.from_numpy(pred_np).unsqueeze(-1)
+            pred_vis = torch.from_numpy(pred_np)
 
             print("xyz_vis:", xyz_vis.shape)
             print("pred_vis before squeeze:", pred_vis.shape)
+
             # Save GT file: x,y,z,gt
             visual_data = torch.cat((xyz_vis, gt_vis), dim=1).cpu().numpy()
             visual_path = os.path.join(save_dir, "visual.csv")
