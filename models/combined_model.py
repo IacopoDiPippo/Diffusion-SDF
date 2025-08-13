@@ -143,6 +143,13 @@ class CombinedModel(pl.LightningModule):
 
 
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
+        for i in range(pred_sdf.size(0)):  # iterate over batch
+            pred = pred_sdf[i]
+            gt = gt[i]
+
+            print(f"Batch {i}:")
+            print(f"  pred_sdf -> min: {pred.min().item():.6f}, max: {pred.max().item():.6f}, mean: {pred.mean().item():.6f}, std: {pred.std().item():.6f}")
+            print(f"  gt_sdf   -> min: {gt.min().item():.6f}, max: {gt.max().item():.6f}, mean: {gt.mean().item():.6f}, std: {gt.std().item():.6f}")
         """print("✅ pred_sdf info:")
         print("  Type:", type(pred_sdf))
         print("  Shape:", pred_sdf.shape)
