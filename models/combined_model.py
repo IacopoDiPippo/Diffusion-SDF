@@ -256,7 +256,7 @@ class CombinedModel(pl.LightningModule):
             pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu().unsqueeze(-1)  # (N, 1)
 
             # Stack together x,y,z,pred
-            pred_sdf_cpu = pred_sdf_cpu.squeeze()  # now shape is (N, 1)
+            pred_sdf_cpu = pred_sdf_cpu.view(-1, 1)   # force (N, 1)
             latent_vis = torch.cat((grid_points_cpu, pred_sdf_cpu), dim=1).numpy()
 
             latent_csv_path = os.path.join(save_dir, "latent_output.csv")
