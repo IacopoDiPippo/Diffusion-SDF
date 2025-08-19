@@ -247,14 +247,14 @@ class CombinedModel(pl.LightningModule):
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
             # Reparametrize with std=1
             logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
-            latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
+            latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar) * 0.25
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
             # Forward pass through the decoder / generation model
             generated_grids = []
             for i in range(latents.shape[0]):
                 latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
                 grid_points_i = grid_points  # (1, N, 3)
-                pred_grid = self.sdf_model.forward_with_base_features(latent_i, xyz[0].unsqueeze(0))  # (1, N)
+                pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
                 print("Number of pred_grid negative SDF values:", len(pred_grid[pred_grid<=0]))
                 print(pred_grid.shape)
                 torch.cuda.empty_cache()  
