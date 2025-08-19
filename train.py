@@ -72,7 +72,7 @@ def train():
             model.diffusion_model.load_state_dict(new_state_dict)
         resume = None
     elif args.resume is not None:
-        ckpt = "{}.ckpt".format(args.resume) if args.resume=='last' else "epoch={}.ckpt".format(args.resume)
+        ckpt = "{}.ckpt".format(args.resume) if args.resume=='last' or args.resume == 'mug_couch_final' else "epoch={}.ckpt".format(args.resume)
         resume = os.path.join(args.exp_dir, ckpt)
     else:
         resume = None  
