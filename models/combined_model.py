@@ -213,7 +213,7 @@ class CombinedModel(pl.LightningModule):
             xyz_np = xyz_np[0]
             gt_np = gt_np[0]
             pred_np = pred_np[0]
-
+            print("Number of pred_np < 0:", (pred_np < 0).sum())
             # Take only the first batch for visualization
             xyz_vis = torch.from_numpy(xyz_np)
             gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
