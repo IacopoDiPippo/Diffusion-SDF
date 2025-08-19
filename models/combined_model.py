@@ -298,7 +298,10 @@ class CombinedModel(pl.LightningModule):
                 # Take only the first batch for visualization
                 xyz_vis = torch.from_numpy(xyz_np)
                 pred_vis = torch.from_numpy(pred_np)
-
+                if xyz_vis.ndim == 1:
+                    xyz_vis = xyz_vis.unsqueeze(1)
+                if pred_vis.ndim == 1:
+                    pred_vis = pred_vis.unsqueeze(1)
                 # Save Prediction file: x,y,z,pred
                 output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
                 output_path = os.path.join(save_dir, f"interpolation{i}.csv")
