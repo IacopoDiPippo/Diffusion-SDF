@@ -205,7 +205,7 @@ class CombinedModel(pl.LightningModule):
             latent_dim = self.vae_model.latent_dim
             z_random = torch.randn(1, latent_dim, device=xyz.device) * 0.25
 
-            grid_points = x["grid_points"]
+            grid_points = x["grid_points"][0].unsqueeze(0)  # (1, N, 3)
 
             print("xyz dataloader: min", xyz.min().item(), "max", xyz.max().item())
             print("xyz grid: min", grid_points.min().item(), "max", grid_points.max().item())
