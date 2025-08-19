@@ -265,7 +265,7 @@ class CombinedModel(pl.LightningModule):
             # Extract mu and logvar from out[2]
             mu1 = out[2][0]        # shape [latent_dim]
             mu2 = out[2][1]    # shape [latent_dim]
-            print(out{2}.shape)
+            print(out[2].shape)
             # Number of interpolation steps
             n_steps = 10  
 
