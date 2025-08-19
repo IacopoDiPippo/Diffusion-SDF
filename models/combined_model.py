@@ -166,7 +166,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 1:
+        if getattr(self, "counter", 0) == 10000000000:
             save_dir = f"visual{self.counter}"
             os.makedirs(save_dir, exist_ok=True)
 
