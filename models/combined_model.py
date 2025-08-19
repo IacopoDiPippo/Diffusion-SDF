@@ -298,6 +298,8 @@ class CombinedModel(pl.LightningModule):
                 # Take only the first batch for visualization
                 xyz_vis = torch.from_numpy(xyz_np)
                 pred_vis = torch.from_numpy(pred_np)
+                print(xyz_vis.shape)
+                print(pred_vis.shape)
                 if xyz_vis.ndim == 1:
                     xyz_vis = xyz_vis.unsqueeze(1)
                 if pred_vis.ndim == 1:
