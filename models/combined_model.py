@@ -262,6 +262,10 @@ class CombinedModel(pl.LightningModule):
             np.savetxt(latent_csv_path, latent_vis, delimiter=",", header="x,y,z,pred", comments="")
             print(f"Saved latent generation visualization to {latent_csv_path}")
 
+            pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, xyz[0].unsqueeze(0))  # (1, N)
+            print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
+            
+
             # --- INTERPOLATION ---
 
             # Extract mu and logvar from out[2]
