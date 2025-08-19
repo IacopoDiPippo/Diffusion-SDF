@@ -258,12 +258,56 @@ class CombinedModel(pl.LightningModule):
             pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu().unsqueeze(-1)  # (N, 1)
             print("Predicted SDF shape:", pred_sdf_cpu.shape)
             # Stack together x,y,z,pred
-            pred_sdf_cpu = pred_sdf_cpu.view(-1, 1)   # force (N, 1)
+            pred_sdf_cpu = pred_sdf_cpu.squeeze(-1)   # force (N, 1)
+            print("Predicted SDF shape after squeeze:", pred_sdf_cpu.shape)
             latent_vis = torch.cat((grid_points_cpu, pred_sdf_cpu), dim=1).numpy()
 
             latent_csv_path = os.path.join(save_dir, "latent_output.csv")
             np.savetxt(latent_csv_path, latent_vis, delimiter=",", header="x,y,z,pred", comments="")
             print(f"Saved latent generation visualization to {latent_csv_path}")
+
+            # --- INTERPOLATION ---
+
+            # Extract mu and logvar from out[2]
+            mu1 = out[2][0]        # shape [latent_dim]
+            mu2 = out[2][1]    # shape [latent_dim]
+
+            # Number of interpolation steps
+            n_steps = 10  
+
+            # Create a grid of latent vectors by interpolating between mu and logvar
+            # Here we interpolate elementwise between out[2][0] and out[2][1]
+            linspace = torch.linspace(0, 1, n_steps, device=mu1.device).unsqueeze(1)  # (n_steps, 1)
+            interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
+
+            # Reparametrize with std=1
+            logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
+            latents = self.vae_model.reparametrize(interpolated_latents, logvar=logvar)
+
+            # Forward pass through the decoder / generation model
+            generated_grid = self.sdf_model.forward_with_base_features(latents, grid_points)
+
+            # Move to CPU and convert to numpy
+            xyz_np = grid_points.detach().cpu().numpy()
+            pred_np = generated_grid.detach().cpu().numpy()
+
+            for i in range(pred_np.shape[0]):
+                # Take only the first batch for visualization
+                xyz_np = xyz_np[i]
+                pred_np = pred_np[i]
+
+                # Take only the first batch for visualization
+                xyz_vis = torch.from_numpy(xyz_np)
+                pred_vis = torch.from_numpy(pred_np)
+
+                print("xyz_vis:", xyz_vis.shape)
+                print("pred_vis before squeeze:", pred_vis.shape)
+
+                # Save Prediction file: x,y,z,pred
+                output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
+                output_path = os.path.join(save_dir, f"interpolation{i}.csv")
+                np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
+                print(f"Saved prediction visualization to {output_path}")
 
         self.counter = getattr(self, "counter", 0) + 1
 
