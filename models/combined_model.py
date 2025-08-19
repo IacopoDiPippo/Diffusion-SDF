@@ -141,7 +141,6 @@ class CombinedModel(pl.LightningModule):
         reconstructed_base_point, latent = out[0], out[-1]
         
 
-        print(xyz.shape)
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
  
         """print("✅ pred_sdf info:")
@@ -273,11 +272,10 @@ class CombinedModel(pl.LightningModule):
             # Here we interpolate elementwise between out[2][0] and out[2][1]
             linspace = torch.linspace(0, 1, n_steps, device=mu1.device).unsqueeze(1)  # (n_steps, 1)
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
-            print("Interpolated latents shape:", interpolated_latents.shape)
             # Reparametrize with std=1
             logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
-
+            grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
             # Forward pass through the decoder / generation model
             generated_grid = self.sdf_model.forward_with_base_features(latents, grid_points)
 
@@ -293,9 +291,6 @@ class CombinedModel(pl.LightningModule):
                 # Take only the first batch for visualization
                 xyz_vis = torch.from_numpy(xyz_np)
                 pred_vis = torch.from_numpy(pred_np)
-
-                print("xyz_vis:", xyz_vis.shape)
-                print("pred_vis before squeeze:", pred_vis.shape)
 
                 # Save Prediction file: x,y,z,pred
                 output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
