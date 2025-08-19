@@ -247,7 +247,7 @@ class CombinedModel(pl.LightningModule):
 
             # 3. Predict SDF
             pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
-            print(len(pred_sdf_rand[pred_sdf_rand<=0]))
+            print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
             # --- SAVE CSV like before ---
             grid_points_cpu = grid_points.squeeze(0).detach().cpu()   # (N, 3)
             pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu().unsqueeze(-1)  # (N, 1)
@@ -265,7 +265,7 @@ class CombinedModel(pl.LightningModule):
             # Extract mu and logvar from out[2]
             mu1 = out[2][0]        # shape [latent_dim]
             mu2 = out[2][1]    # shape [latent_dim]
-
+            print(out.shape)
             # Number of interpolation steps
             n_steps = 10  
 
