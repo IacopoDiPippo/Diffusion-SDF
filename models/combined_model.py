@@ -239,8 +239,8 @@ class CombinedModel(pl.LightningModule):
             latent_dim = self.vae_model.latent_dim
             z_random = torch.randn(1, latent_dim, device=xyz.device)
 
-            # 2. Make a uniform 48x48x48 grid of coordinates in [-1,1]
-            coords_lin = torch.linspace(-1, 1, 48, device=xyz.device)
+            # 2. Make a uniform 32x32x32 grid of coordinates in [-1,1]
+            coords_lin = torch.linspace(-1, 1, 32, device=xyz.device)
             grid_x, grid_y, grid_z = torch.meshgrid(coords_lin, coords_lin, coords_lin, indexing="ij")
             grid_points = torch.stack((grid_x, grid_y, grid_z), dim=-1).view(-1, 3).unsqueeze(0)  # (1, N, 3)
 
@@ -282,6 +282,7 @@ class CombinedModel(pl.LightningModule):
                 latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
                 grid_points_i = grid_points  # (1, N, 3)
                 pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
+                torch.cuda.empty_cache()  
                 generated_grids.append(pred_grid.cpu())
             generated_grid = torch.cat(generated_grids, dim=0)  # (n_steps, N)
 
