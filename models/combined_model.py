@@ -250,11 +250,13 @@ class CombinedModel(pl.LightningModule):
 
             # 3. Predict SDF
             pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
+            print("Predicted SDF shape:", pred_sdf_rand.shape)
 
             # --- SAVE CSV like before ---
             grid_points_cpu = grid_points.squeeze(0).detach().cpu()   # (N, 3)
+            print("Grid points shape:", grid_points_cpu.shape)
             pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu().unsqueeze(-1)  # (N, 1)
-
+            print("Predicted SDF shape:", pred_sdf_cpu.shape)
             # Stack together x,y,z,pred
             pred_sdf_cpu = pred_sdf_cpu.view(-1, 1)   # force (N, 1)
             latent_vis = torch.cat((grid_points_cpu, pred_sdf_cpu), dim=1).numpy()
