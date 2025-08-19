@@ -141,7 +141,7 @@ class CombinedModel(pl.LightningModule):
         reconstructed_base_point, latent = out[0], out[-1]
         
 
-
+        print(xyz.shape)
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
  
         """print("✅ pred_sdf info:")
