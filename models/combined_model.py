@@ -277,7 +277,13 @@ class CombinedModel(pl.LightningModule):
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
             # Forward pass through the decoder / generation model
-            generated_grid = self.sdf_model.forward_with_base_features(latents, grid_points_repeat)
+            generated_grids = []
+            for i in range(latents.shape[0]):
+                latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
+                grid_points_i = grid_points  # (1, N, 3)
+                pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
+                generated_grids.append(pred_grid.cpu())
+            generated_grid = torch.cat(generated_grids, dim=0)  # (n_steps, N)
 
             # Move to CPU and convert to numpy
             xyz_np = grid_points_repeat.detach().cpu().numpy()
