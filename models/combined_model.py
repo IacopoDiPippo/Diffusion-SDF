@@ -202,7 +202,7 @@ class CombinedModel(pl.LightningModule):
 
         # ==== SAVE DEBUG CSVs ====
         if getattr(self, "counter", 0) == 10:
-            save_dir = "visual"
+            save_dir = f"visual{self.counter}"
             os.makedirs(save_dir, exist_ok=True)
 
             # Move to CPU and convert to numpy
@@ -219,9 +219,6 @@ class CombinedModel(pl.LightningModule):
             xyz_vis = torch.from_numpy(xyz_np)
             gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
             pred_vis = torch.from_numpy(pred_np)
-
-            print("xyz_vis:", xyz_vis.shape)
-            print("pred_vis before squeeze:", pred_vis.shape)
 
             # Save GT file: x,y,z,gt
             visual_data = torch.cat((xyz_vis, gt_vis), dim=1).cpu().numpy()
@@ -250,16 +247,13 @@ class CombinedModel(pl.LightningModule):
 
             # 3. Predict SDF
             pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
-            print("Predicted SDF shape:", pred_sdf_rand.shape)
-
+            print(len(pred_sdf_rand[pred_sdf_rand<=0]))
             # --- SAVE CSV like before ---
             grid_points_cpu = grid_points.squeeze(0).detach().cpu()   # (N, 3)
-            print("Grid points shape:", grid_points_cpu.shape)
             pred_sdf_cpu = pred_sdf_rand.squeeze(0).detach().cpu().unsqueeze(-1)  # (N, 1)
-            print("Predicted SDF shape:", pred_sdf_cpu.shape)
+
             # Stack together x,y,z,pred
             pred_sdf_cpu = pred_sdf_cpu.squeeze(-1)   # force (N, 1)
-            print("Predicted SDF shape after squeeze:", pred_sdf_cpu.shape)
             latent_vis = torch.cat((grid_points_cpu, pred_sdf_cpu), dim=1).numpy()
 
             latent_csv_path = os.path.join(save_dir, "latent_output.csv")
