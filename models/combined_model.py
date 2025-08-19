@@ -134,56 +134,21 @@ class CombinedModel(pl.LightningModule):
         base_points = x['basis_point']  # (B, 1024, 3)
         self.sdf_model.eval()
         self.vae_model.eval()
-    
-   
-
         
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
-        
+        print("mean and std and min and max of out[2] and out[3]:")
+        print("  Mean:", out[2].mean().item())
+        print("  Std:", out[2].std().item())
+        print("  Min:", out[2].min().item())
+        print("  Max:", out[2].max().item())
+        print("  Mean:", out[3].mean().item())
+        print("  Std:", out[3].std().item())
+        print("  Min:", out[3].min().item())
+        print("  Max:", out[3].max().item())
 
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
  
-        """print("✅ pred_sdf info:")
-        print("  Type:", type(pred_sdf))
-        print("  Shape:", pred_sdf.shape)
-        print("  Dtype:", pred_sdf.dtype)
-        print("  Min:", pred_sdf.min().item())
-        print("  Max:", pred_sdf.max().item())
-        print("  Mean:", pred_sdf.mean().item())
-        print("  Std:", pred_sdf.std().item())
-        print("  Unique values:", torch.unique(pred_sdf).numel())
-        print("  All values equal?", torch.all(pred_sdf == pred_sdf.view(-1)[0]).item())
-
-        # Info gt_sdf
-        print("✅ gt_sdf info:")
-        print(f"  Type: {type(gt)}")
-        print(f"  Shape: {gt.shape}")
-        print(f"  Dtype: {gt.dtype}")
-        print(f"  Min: {gt.min().item():.6f}")
-        print(f"  Max: {gt.max().item():.6f}")
-        print(f"  Mean: {gt.mean().item():.6f}")
-        print(f"  Std: {gt.std().item():.6f}")
-        print(f"  Unique values: {torch.unique(gt).numel()}")
-        print(f"  All values equal? {torch.all(gt == gt.view(-1)[0]).item()}")
-
-        # Single debug call at the end
-        self.debug_shapes(
-            xyz=xyz,
-            gt=gt,
-            base_points=base_points,
-            vae_output=out,
-            reconstructed_base_point=reconstructed_base_point,
-            latent=latent,
-            pred_sdf=pred_sdf
-        )
-        
-       
-
-        diffs = latent.unsqueeze(1) - latent.unsqueeze(0)  # (B, B, N)
-        norms = torch.norm(diffs, dim=2)  # (B, B)
-        print(f"E- Norm matrix:\n{norms}")
-        """
         # STEP 3: losses for VAE and SDF
         # we only use the KL loss for the VAE; no reconstruction loss
         try:
@@ -288,7 +253,6 @@ class CombinedModel(pl.LightningModule):
             generated_grids = []
             for i in range(latents.shape[0]):
                 latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
-                print("latenti = out[2][0]??", latent_i==out[2][0])
                 grid_points_i = grid_points  # (1, N, 3)
                 pred_grid = self.sdf_model.forward_with_base_features(latent_i, xyz[0].unsqueeze(0))  # (1, N)
                 print("Number of pred_grid negative SDF values:", len(pred_grid[pred_grid<=0]))
