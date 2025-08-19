@@ -2,7 +2,7 @@
     "Description" : "training joint SDF-VAE model for modulating SDFs on the couch dataset",
     "DataSource" : "data",
     "GridSource" : "data/grid_data",
-    "TrainSplit" : "data/splits/couch_mug_all.json",
+    "TrainSplit" : "data/splits/couch_mug_1.json",
     "TestSplit" : "data/splits/couch_mug_all.json",
     
     "training_task": "modulation",
