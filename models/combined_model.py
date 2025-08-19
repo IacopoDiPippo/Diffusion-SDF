@@ -132,7 +132,8 @@ class CombinedModel(pl.LightningModule):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
         base_points = x['basis_point']  # (B, 1024, 3)
-        
+        self.sdf_model.eval()
+        self.vae_model.eval()
     
    
 
@@ -213,7 +214,7 @@ class CombinedModel(pl.LightningModule):
             xyz_np = xyz_np[0]
             gt_np = gt_np[0]
             pred_np = pred_np[0]
-            print("Number of pred_np < 0:", (pred_np < 0).sum())
+
             # Take only the first batch for visualization
             xyz_vis = torch.from_numpy(xyz_np)
             gt_vis = torch.from_numpy(gt_np).unsqueeze(-1)
@@ -264,7 +265,7 @@ class CombinedModel(pl.LightningModule):
 
             pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, xyz[0].unsqueeze(0))  # (1, N)
             print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
-            
+            print(pred_sdf_rand.shape)
 
             # --- INTERPOLATION ---
 
@@ -287,9 +288,11 @@ class CombinedModel(pl.LightningModule):
             generated_grids = []
             for i in range(latents.shape[0]):
                 latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
+                print("latenti = out[2][0]??", latent_i==out[2][0])
                 grid_points_i = grid_points  # (1, N, 3)
                 pred_grid = self.sdf_model.forward_with_base_features(latent_i, xyz[0].unsqueeze(0))  # (1, N)
                 print("Number of pred_grid negative SDF values:", len(pred_grid[pred_grid<=0]))
+                print(pred_grid.shape)
                 torch.cuda.empty_cache()  
                 generated_grids.append(pred_grid.cpu())
             generated_grid = torch.cat(generated_grids, dim=0)  # (n_steps, N)
