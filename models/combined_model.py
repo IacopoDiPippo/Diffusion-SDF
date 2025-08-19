@@ -246,8 +246,9 @@ class CombinedModel(pl.LightningModule):
             linspace = torch.linspace(0, 1, n_steps, device=mu1.device).unsqueeze(1)  # (n_steps, 1)
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
             # Reparametrize with std=1
-            logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
-            latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar) * 0.25
+            logvar = torch.full_like(interpolated_latents, -12.0)
+  # zero logvar for simplicity
+            latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
             # Forward pass through the decoder / generation model
             generated_grids = []
