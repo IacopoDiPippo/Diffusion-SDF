@@ -244,6 +244,9 @@ class CombinedModel(pl.LightningModule):
             grid_x, grid_y, grid_z = torch.meshgrid(coords_lin, coords_lin, coords_lin, indexing="ij")
             grid_points = torch.stack((grid_x, grid_y, grid_z), dim=-1).view(-1, 3).unsqueeze(0)  # (1, N, 3)
 
+            print("xyz dataloader: min", xyz.min().item(), "max", xyz.max().item())
+            print("xyz grid: min", grid_points.min().item(), "max", grid_points.max().item())
+
             # 3. Predict SDF
             pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
             print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
