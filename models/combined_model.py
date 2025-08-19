@@ -276,7 +276,7 @@ class CombinedModel(pl.LightningModule):
 
             # Reparametrize with std=1
             logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
-            latents = self.vae_model.reparametrize(interpolated_latents, logvar=logvar)
+            latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
 
             # Forward pass through the decoder / generation model
             generated_grid = self.sdf_model.forward_with_base_features(latents, grid_points)
