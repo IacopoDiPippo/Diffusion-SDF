@@ -273,7 +273,7 @@ class CombinedModel(pl.LightningModule):
             # Here we interpolate elementwise between out[2][0] and out[2][1]
             linspace = torch.linspace(0, 1, n_steps, device=mu1.device).unsqueeze(1)  # (n_steps, 1)
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
-
+            print("Interpolated latents shape:", interpolated_latents.shape)
             # Reparametrize with std=1
             logvar = torch.zeros_like(interpolated_latents)  # zero logvar for simplicity
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
