@@ -89,6 +89,18 @@ class Dataset(torch.utils.data.Dataset):
 
         return pc.float().squeeze(), samples[:,:3].float().squeeze(), samples[:, 3].float().squeeze() # pc, xyz, sdv
 
+    def get_grid(self, f, subsample = None, load_from_path=True):
+        if load_from_path:
+            f=pd.read_csv(f, sep=',',header=None).values
+            f = torch.from_numpy(f)
+
+        # Se subsample è specificato, prendi solo un sottoinsieme casuale
+        if subsample is not None and f.shape[0] > subsample:
+            idx = torch.randperm(f.shape[0])[:subsample]
+            f = f[idx]
+
+        return f[:, :3].float()
+    
     def get_pointcloud(self, f,load_from_path=True):
         if load_from_path:
             f=pd.read_csv(f, sep=',',header=None).values

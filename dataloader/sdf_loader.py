@@ -96,12 +96,14 @@ class SdfLoader(base.Dataset):
             #print("shapes: ", pc.shape,  sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
             sdf_xyz = torch.cat((sdf_xyz, grid_xyz))
             sdf_gt = torch.cat((sdf_gt, grid_gt))
+            grid = self.get_grid(self.grid_files[idx], load_from_path=False)
             #print("shapes after adding grid: ", pc.shape, sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
 
         data_dict = {
                     "xyz":sdf_xyz.float().squeeze(),
                     "gt_sdf":sdf_gt.float().squeeze(), 
                     "basis_point":basis_point.float().squeeze(),
+                    "grid_point":grid.float().squeeze() if self.grid_source else None
                     }
 
         return data_dict

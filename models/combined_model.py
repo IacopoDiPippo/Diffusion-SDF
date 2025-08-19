@@ -205,10 +205,7 @@ class CombinedModel(pl.LightningModule):
             latent_dim = self.vae_model.latent_dim
             z_random = torch.randn(1, latent_dim, device=xyz.device) * 0.25
 
-            # 2. Make a uniform 32x32x32 grid of coordinates in [-1,1]
-            coords_lin = torch.linspace(-1, 1, 32, device=xyz.device)
-            grid_x, grid_y, grid_z = torch.meshgrid(coords_lin, coords_lin, coords_lin, indexing="ij")
-            grid_points = torch.stack((grid_x, grid_y, grid_z), dim=-1).view(-1, 3).unsqueeze(0)  # (1, N, 3)
+            grid_points = x["grid_points"]
 
             print("xyz dataloader: min", xyz.min().item(), "max", xyz.max().item())
             print("xyz grid: min", grid_points.min().item(), "max", grid_points.max().item())
@@ -247,7 +244,6 @@ class CombinedModel(pl.LightningModule):
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
             # Reparametrize with std=1
             logvar = torch.full_like(interpolated_latents, -12.0)
-  # zero logvar for simplicity
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
             # Forward pass through the decoder / generation model
