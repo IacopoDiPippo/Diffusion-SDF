@@ -166,7 +166,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 10000000000:
+        if getattr(self, "counter", 0) == 1:
             save_dir = f"visual{self.counter}"
             os.makedirs(save_dir, exist_ok=True)
 
@@ -203,7 +203,7 @@ class CombinedModel(pl.LightningModule):
 
             # 1. Sample a random latent from N(0,1)
             latent_dim = self.vae_model.latent_dim
-            z_random = torch.randn(1, latent_dim, device=xyz.device)
+            z_random = torch.randn(1, latent_dim, device=xyz.device) * 0.25
 
             # 2. Make a uniform 32x32x32 grid of coordinates in [-1,1]
             coords_lin = torch.linspace(-1, 1, 32, device=xyz.device)
