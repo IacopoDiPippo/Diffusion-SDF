@@ -264,7 +264,7 @@ class CombinedModel(pl.LightningModule):
             # Extract mu and logvar from out[2]
             mu1 = out[2][0]        # shape [latent_dim]
             mu2 = out[2][1]    # shape [latent_dim]
-            print(out[2].shape)
+            
             # Number of interpolation steps
             n_steps = 10  
 
@@ -291,20 +291,12 @@ class CombinedModel(pl.LightningModule):
             pred_np = generated_grid.detach().cpu().numpy()
 
             for i in range(pred_np.shape[0]):
-                # Take only the first batch for visualization
-                xyz_np = xyz_np[i]
-                pred_np = pred_np[i]
-
-                # Take only the first batch for visualization
-                xyz_vis = torch.from_numpy(xyz_np)
-                pred_vis = torch.from_numpy(pred_np)
-                print(xyz_vis.shape)
-                print(pred_vis.shape)
-                if xyz_vis.ndim == 1:
-                    xyz_vis = xyz_vis.unsqueeze(1)
+                xyz_i = xyz_np[i]  # (N, 3)
+                pred_i = pred_np[i]  # (N,) or (N, 1)
+                xyz_vis = torch.from_numpy(xyz_i).view(-1, 3)
+                pred_vis = torch.from_numpy(pred_i)
                 if pred_vis.ndim == 1:
                     pred_vis = pred_vis.unsqueeze(1)
-                # Save Prediction file: x,y,z,pred
                 output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
                 output_path = os.path.join(save_dir, f"interpolation{i}.csv")
                 np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
