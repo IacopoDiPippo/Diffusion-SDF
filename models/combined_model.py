@@ -288,7 +288,8 @@ class CombinedModel(pl.LightningModule):
             for i in range(latents.shape[0]):
                 latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
                 grid_points_i = grid_points  # (1, N, 3)
-                pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
+                pred_grid = self.sdf_model.forward_with_base_features(latent_i, xyz[0].unsqueeze(0))  # (1, N)
+                print("Number of pred_grid negative SDF values:", len(pred_grid[pred_grid<=0]))
                 torch.cuda.empty_cache()  
                 generated_grids.append(pred_grid.cpu())
             generated_grid = torch.cat(generated_grids, dim=0)  # (n_steps, N)
