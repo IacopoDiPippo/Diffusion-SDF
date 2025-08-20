@@ -206,12 +206,9 @@ class CombinedModel(pl.LightningModule):
             z_random = torch.randn(1, latent_dim, device=xyz.device) * 0.25
 
             grid_points = x["grid_point"][0].unsqueeze(0)  # (1, N, 3)
-
-            print("xyz dataloader: min", xyz.min().item(), "max", xyz.max().item())
-            print("xyz grid: min", grid_points.min().item(), "max", grid_points.max().item())
-
-            # 3. Predict SDF
-            pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
+            with torch.no_grad():
+                # 3. Predict SDF
+                pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, grid_points)  # (1, N)
             print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
             # --- SAVE CSV like before ---
             grid_points_cpu = grid_points.squeeze(0).detach().cpu()   # (N, 3)
@@ -246,33 +243,30 @@ class CombinedModel(pl.LightningModule):
             logvar = torch.full_like(interpolated_latents, -12.0)
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
-            # Forward pass through the decoder / generation model
-            generated_grids = []
-            for i in range(latents.shape[0]):
-                latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
-                grid_points_i = grid_points  # (1, N, 3)
-                pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
-                print("Number of pred_grid negative SDF values:", len(pred_grid[pred_grid<=0]))
-                print(pred_grid.shape)
-                torch.cuda.empty_cache()  
-                generated_grids.append(pred_grid.cpu())
-            generated_grid = torch.cat(generated_grids, dim=0)  # (n_steps, N)
 
-            # Move to CPU and convert to numpy
-            xyz_np = grid_points_repeat.detach().cpu().numpy()
-            pred_np = generated_grid.detach().cpu().numpy()
+            with torch.no_grad():  # evita di tenere grafo in memoria
+                for i in range(latents.shape[0]):
+                    latent_i = latents[i].unsqueeze(0)  # (1, latent_dim)
+                    grid_points_i = grid_points  # (1, N, 3)
 
-            for i in range(pred_np.shape[0]):
-                xyz_i = xyz_np[i]  # (N, 3)
-                pred_i = pred_np[i]  # (N,) or (N, 1)
-                xyz_vis = torch.from_numpy(xyz_i).view(-1, 3)
-                pred_vis = torch.from_numpy(pred_i)
-                if pred_vis.ndim == 1:
-                    pred_vis = pred_vis.unsqueeze(1)
-                output_data = torch.cat((xyz_vis, pred_vis), dim=1).cpu().numpy()
-                output_path = os.path.join(save_dir, f"interpolation{i}.csv")
-                np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
-                print(f"Saved prediction visualization to {output_path}")
+                    pred_grid = self.sdf_model.forward_with_base_features(latent_i, grid_points_i)  # (1, N)
+                    print("Number of pred_grid negative SDF values:", (pred_grid <= 0).sum().item())
+                    print(pred_grid.shape)
+
+                    # Porta su CPU subito e libera la GPU
+                    pred_np = pred_grid.detach().cpu().numpy().squeeze()
+                    xyz_np = grid_points_repeat[i].detach().cpu().numpy()  # (N, 3)
+
+                    # Concateno e salvo direttamente
+                    output_data = np.concatenate([xyz_np, pred_np[:, None]], axis=1)  # (N, 4)
+                    output_path = os.path.join(save_dir, f"interpolation{i}.csv")
+                    np.savetxt(output_path, output_data, delimiter=",", header="x,y,z,pred", comments="")
+
+                    print(f"Saved prediction visualization to {output_path}")
+
+                    # pulizia memoria GPU
+                    del pred_grid
+                    torch.cuda.empty_cache()
 
         self.counter = getattr(self, "counter", 0) + 1
 
