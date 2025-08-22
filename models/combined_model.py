@@ -132,20 +132,20 @@ class CombinedModel(pl.LightningModule):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
         base_points = x['basis_point']  # (B, 1024, 3)
-        self.sdf_model.eval()
-        self.vae_model.eval()
         
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
-        print("mean and std and min and max of out[2] and out[3]:")
-        print("  Mean:", out[2].mean().item())
-        print("  Std:", out[2].std().item())
-        print("  Min:", out[2].min().item())
-        print("  Max:", out[2].max().item())
-        print("  Mean:", out[3].mean().item())
-        print("  Std:", out[3].std().item())
-        print("  Min:", out[3].min().item())
-        print("  Max:", out[3].max().item())
+        # ==== SAVE DEBUG CSVs ====
+        if getattr(self, "counter", 0) == 1000:
+            print("mean and std and min and max of out[2] and out[3]:")
+            print("  Mean:", out[2].mean().item())
+            print("  Std:", out[2].std().item())
+            print("  Min:", out[2].min().item())
+            print("  Max:", out[2].max().item())
+            print("  Mean:", out[3].mean().item())
+            print("  Std:", out[3].std().item())
+            print("  Min:", out[3].min().item())
+            print("  Max:", out[3].max().item())
 
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
  
@@ -166,7 +166,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 1:
+        if getattr(self, "counter", 0) == 5000:
             save_dir = f"visual{self.counter}"
             os.makedirs(save_dir, exist_ok=True)
 
@@ -203,7 +203,7 @@ class CombinedModel(pl.LightningModule):
 
             # 1. Sample a random latent from N(0,1)
             latent_dim = self.vae_model.latent_dim
-            z_random = torch.randn(1, latent_dim, device=xyz.device) * 0.25
+            z_random = torch.randn(1, latent_dim, device=xyz.device) * self.specs.get("latent_std", 0.25)  # (1, latent_dim)
 
             grid_points = x["grid_point"][0].unsqueeze(0)  # (1, N, 3)
             with torch.no_grad():
@@ -222,10 +222,6 @@ class CombinedModel(pl.LightningModule):
             np.savetxt(latent_csv_path, latent_vis, delimiter=",", header="x,y,z,pred", comments="")
             print(f"Saved latent generation visualization to {latent_csv_path}")
 
-            pred_sdf_rand = self.sdf_model.forward_with_base_features(z_random, xyz[0].unsqueeze(0))  # (1, N)
-            print("Number of negative SDF values:", len(pred_sdf_rand[pred_sdf_rand<=0]))
-            print(pred_sdf_rand.shape)
-
             # --- INTERPOLATION ---
 
             # Extract mu and logvar from out[2]
@@ -240,7 +236,8 @@ class CombinedModel(pl.LightningModule):
             linspace = torch.linspace(0, 1, n_steps, device=mu1.device).unsqueeze(1)  # (n_steps, 1)
             interpolated_latents = mu1 * (1 - linspace) + mu2 * linspace  # (n_steps, latent_dim)
             # Reparametrize with std=1
-            logvar = torch.full_like(interpolated_latents, -12.0)
+            std = self.specs.get("latent_std", 0.25)
+            logvar = torch.full_like(interpolated_latents, 2 * torch.log(torch.tensor(std)))
             latents = self.vae_model.reparameterize(interpolated_latents, logvar=logvar)
             grid_points_repeat = grid_points.repeat(latents.shape[0], 1, 1)  # (n_steps, N, 3)
 
