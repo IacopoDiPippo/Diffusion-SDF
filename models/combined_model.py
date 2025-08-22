@@ -28,6 +28,8 @@ class CombinedModel(pl.LightningModule):
             self.vae_model = BetaVAE(in_channels=3, latent_dim=feature_dim, hidden_dims=None, kl_std=latent_std)
         if self.task in ('combined', 'diffusion'):
             self.diffusion_model = DiffusionModel(model=DiffusionNet(**specs["diffusion_model_specs"]), **specs["diffusion_specs"]) 
+            print("Number of parameter of diffusion model", self.diffusion_model.count_params())
+            print("Structure of diffusion model ", self.diffusion_model)
  
         self.bps_grid = self._create_bps_grid()
 

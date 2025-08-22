@@ -18,7 +18,7 @@
   
     "num_epochs" : 20000,
     "log_freq" : 500000,
-    "kld_weight" : 1e-4,
+    "kld_weight" : 1e-3,
     "latent_std" : 0.5,
   
     "sdf_lr" : 1e-3
