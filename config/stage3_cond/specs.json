@@ -2,12 +2,12 @@
   "Description" : "end-to-end training (conditional) on couch dataset",
   "DataSource" : "data",
   "GridSource" : "grid_data",
-  "TrainSplit" : "data/splits/couch_all.json",
-  "TestSplit" : "data/splits/couch_all.json",
+  "TrainSplit" : "data/splits/couch_mug_all.json",
+  "TestSplit" : "data/splits/couch_mug_all.json",
   "modulation_path" : "config/stage1_sdf/modulations",
 
   "modulation_ckpt_path" : "config/stage1_sdf/last.ckpt",
-  "diffusion_ckpt_path" : "config/stage2_cond/last.ckpt",
+  "diffusion_ckpt_path" : "config/stage2_diff_cond/last.ckpt",
   
   "training_task": "combined",
 
