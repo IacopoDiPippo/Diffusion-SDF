@@ -1,7 +1,7 @@
 {
   "Description" : "end-to-end training (conditional) on couch dataset",
   "DataSource" : "data",
-  "GridSource" : "grid_data",
+  "GridSource" : "data/grid_data",
   "TrainSplit" : "data/splits/couch_mug_all.json",
   "TestSplit" : "data/splits/couch_mug_all.json",
   "modulation_path" : "config/stage1_sdf/modulations",
