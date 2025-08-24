@@ -349,19 +349,25 @@ class CombinedModel(pl.LightningModule):
     # the first half is the same as "train_sdf_modulation"
     # the reconstructed latent is used as input to the diffusion model, rather than loading latents from the dataloader as in "train_diffusion"
     def train_combined(self, x):
-        xyz = x['xyz'] # (B, N, 3)
-        gt = x['gt_sdf'] # (B, N)
-        pc = x['point_cloud'] # (B, 1024, 3)
+        xyz = x['xyz']  # (B, N, 3)
+        gt = x['gt_sdf']  # (B, N)
+        base_points = x['basis_point']  # (B, 1024, 3)
+        
+        out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
+        reconstructed_base_point, latent = out[0], out[-1]
+        # ==== SAVE DEBUG CSVs ====
+        if getattr(self, "counter", 0) == 1000:
+            print("mean and std and min and max of out[2] and out[3]:")
+            print("  Mean:", out[2].mean().item())
+            print("  Std:", out[2].std().item())
+            print("  Min:", out[2].min().item())
+            print("  Max:", out[2].max().item())
+            print("  Mean:", out[3].mean().item())
+            print("  Std:", out[3].std().item())
+            print("  Min:", out[3].min().item())
+            print("  Max:", out[3].max().item())
 
-        # STEP 1: obtain reconstructed plane feature for SDF and latent code for diffusion
-        plane_features = self.sdf_model.pointnet.get_plane_features(pc)
-        original_features = torch.cat(plane_features, dim=1)
-        #print("plane feat shape: ", feat.shape)
-        out = self.vae_model(original_features) # out = [self.decode(z), input, mu, log_var, z]
-        reconstructed_plane_feature, latent = out[0], out[-1] # [B, D*3, resolution, resolution], [B, D*3]
-
-        # STEP 2: pass recon back to GenSDF pipeline 
-        pred_sdf = self.sdf_model.forward_with_plane_features(reconstructed_plane_feature, xyz)
+        pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
         
         # STEP 3: losses for VAE and SDF 
         try:
