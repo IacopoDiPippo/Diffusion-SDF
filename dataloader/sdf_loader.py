@@ -85,7 +85,7 @@ class SdfLoader(base.Dataset):
 
         near_surface_count = int(self.samples_per_mesh*0.7) if self.grid_source else self.samples_per_mesh
 
-        _, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
+        pc, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
         
         basis_point = self.preprocessed_bps[idx]
         if self.grid_source is not None:
@@ -103,7 +103,8 @@ class SdfLoader(base.Dataset):
                     "xyz":sdf_xyz.float().squeeze(),
                     "gt_sdf":sdf_gt.float().squeeze(), 
                     "basis_point":basis_point.float().squeeze(),
-                    "grid_point":grid.float().squeeze() if self.grid_source else None
+                    "grid_point":grid.float().squeeze() if self.grid_source else None,
+                    "point_cloud": pc.float().squeeze() 
                     }
 
         return data_dict

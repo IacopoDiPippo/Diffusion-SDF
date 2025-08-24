@@ -352,6 +352,7 @@ class CombinedModel(pl.LightningModule):
         xyz = x['xyz']  # (B, N, 3)
         gt = x['gt_sdf']  # (B, N)
         base_points = x['basis_point']  # (B, 1024, 3)
+        pc = x['point_cloud']  # (B, 1024, 3) or False if unconditional
         
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
