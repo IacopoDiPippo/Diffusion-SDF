@@ -29,7 +29,6 @@ class SdfLoader(base.Dataset):
         self.samples_per_mesh = samples_per_mesh
         self.pc_size = pc_size
         self.gt_files = self.get_instance_filenames(data_source, split_file, filter_modulation_path=modulation_path)
-        print(self.gt_files[0:20])
         subsample = len(self.gt_files) 
         self.gt_files = self.gt_files[0:subsample]
 

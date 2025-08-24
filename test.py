@@ -45,11 +45,9 @@ def test_modulations():
         for idx, x in enumerate(pbar):
             pbar.set_description("Files evaluated: {}/{}".format(idx, len(test_dataloader)))
 
-            xyz = x['xyz']  # (B, N, 3)
-            gt = x['gt_sdf']  # (B, N)
             base_points = x['basis_point']  # (B, 1024, 3)
             point_cloud = x['point_cloud']
-            filename
+            filename = x['paths'] # filename = path to the csv file of sdf data
             filename = filename[0] # filename is a tuple
 
             cls_name = filename.split("/")[-3]
