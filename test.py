@@ -48,6 +48,7 @@ def test_modulations():
             base_points = x['basis_point']  # (B, 1024, 3)
             point_cloud = x['point_cloud']
             filename = x['paths'] # filename = path to the csv file of sdf data
+            print(filename)
             filename = filename[0] # filename is a tuple
 
             cls_name = filename.split("/")[-3]
