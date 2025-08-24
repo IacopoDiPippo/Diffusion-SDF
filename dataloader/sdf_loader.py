@@ -29,7 +29,7 @@ class SdfLoader(base.Dataset):
         self.samples_per_mesh = samples_per_mesh
         self.pc_size = pc_size
         self.gt_files = self.get_instance_filenames(data_source, split_file, filter_modulation_path=modulation_path)
-
+        print(self.gt_files[0:20])
         subsample = len(self.gt_files) 
         self.gt_files = self.gt_files[0:subsample]
 
@@ -104,7 +104,8 @@ class SdfLoader(base.Dataset):
                     "gt_sdf":sdf_gt.float().squeeze(), 
                     "basis_point":basis_point.float().squeeze(),
                     "grid_point":grid.float().squeeze() if self.grid_source else None,
-                    "point_cloud": pc.float().squeeze() 
+                    "point_cloud": pc.float().squeeze(),
+                    "paths": self.gt_files[idx],
                     }
 
         return data_dict

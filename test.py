@@ -24,14 +24,14 @@ from diff_utils.helpers import *
 #from metrics.evaluation_metrics import *#compute_all_metrics
 #from metrics import evaluation_metrics
 
-from dataloader.pc_loader import PCloader
+from dataloader.sdf_loader import SdfLoader
 
 @torch.no_grad()
 def test_modulations():
     
     # load dataset, dataloader, model checkpoint
     test_split = json.load(open(specs["TestSplit"]))
-    test_dataset = PCloader(specs["DataSource"], test_split, pc_size=specs.get("PCsize",1024), return_filename=True)
+    test_dataset = SdfLoader(specs["DataSource"], test_split, pc_size=specs.get("PCsize",1024),grid_source=specs.get("GridSource", None), modulation_path=specs.get("modulation_path", None))
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, num_workers=0, shuffle= True)
 
     ckpt = "{}.ckpt".format(args.resume) if args.resume=='last' else "epoch={}.ckpt".format(args.resume)
@@ -42,10 +42,14 @@ def test_modulations():
     cd_file = os.path.join(recon_dir, "cd.csv") 
 
     with tqdm(test_dataloader) as pbar:
-        for idx, data in enumerate(pbar):
+        for idx, x in enumerate(pbar):
             pbar.set_description("Files evaluated: {}/{}".format(idx, len(test_dataloader)))
 
-            point_cloud, filename = data # filename = path to the csv file of sdf data
+            xyz = x['xyz']  # (B, N, 3)
+            gt = x['gt_sdf']  # (B, N)
+            base_points = x['basis_point']  # (B, 1024, 3)
+            point_cloud = x['point_cloud']
+            filename
             filename = filename[0] # filename is a tuple
 
             cls_name = filename.split("/")[-3]
@@ -58,10 +62,6 @@ def test_modulations():
             gt_save_path = os.path.join(outdir, "groundtruth.xyz")
             np.savetxt(gt_save_path, point_cloud.squeeze(0).cpu().numpy())
 
-            # given point cloud, create modulations (e.g. 1D latent vectors)
-            base_points = model.get_base_points(point_cloud.cuda()) #Get (B, 32, 32, 32, 3)
-
-            base_points = base_points.permute(0, 4, 1, 2, 3)  # (B, 32, 32, 32, 3) → (B, 3, 32, 32, 32)
             recon = model.vae_model.generate(base_points) # ([1, D*3, resolution, resolution])
 
             #print("mesh filename: ", mesh_filename)
@@ -159,7 +159,7 @@ def test_generation():
                         samples, perturbed_pc = model.diffusion_model.generate_from_pc(point_cloud.cuda(), batch=args.num_samples, save_pc=outdir, return_pc=True) # batch should be set to max number GPU can hold
                         plane_features = model.vae_model.decode(samples)
                         # predicting the sdf values of the point cloud
-                        perturbed_pc_pred = model.sdf_model.forward_with_plane_features(plane_features, perturbed_pc.repeat(args.num_samples, 1, 1))
+                        perturbed_pc_pred = model.sdf_model.forward_with_base_features(plane_features, perturbed_pc.repeat(args.num_samples, 1, 1))
                         consistency = F.l1_loss(perturbed_pc_pred, torch.zeros_like(perturbed_pc_pred), reduction='none')
                         loss = reduce(consistency, 'b ... -> b', 'mean', b = consistency.shape[0]) # one value per generated sample 
                         #print("consistency shape: ", consistency.shape, loss.shape, consistency[0].mean(), consistency[1].mean(), loss) # cons: [B,N]; loss: [B]
