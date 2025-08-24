@@ -89,6 +89,9 @@ class BetaVAE(nn.Module):
 
         return [mu, log_var]
 
+    def decode(self, z):
+        return z
+
     def debug_shapes(self,**kwargs):
         if False:
             """Prints shapes/types of all provided variables. Call this at the end of your function."""
