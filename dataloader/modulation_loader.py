@@ -27,7 +27,7 @@ class ModulationLoader(torch.utils.data.Dataset):
         #self.modulations = self.modulations[0:8]
         #pc_paths = pc_paths[0:8]
 
-        print("data shape, dataset len: ",  len(self.modulations))
+        print("Number of modulations found: ", len(self.modulations))
         #assert args.batch_size <= len(self.modulations)
         
         if self.conditional:
@@ -78,6 +78,7 @@ class ModulationLoader(torch.utils.data.Dataset):
                             continue
                         files.append( torch.from_numpy(np.loadtxt(instance_filename)).float() )
                         filepaths.append( os.path.join(pc_source, dataset, class_name, instance_name, "sdf_data.csv") )
+                        print("Loaded file: ", instance_filename)
         if return_filepaths:
             return files, filepaths
         return files
