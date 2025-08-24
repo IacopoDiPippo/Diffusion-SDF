@@ -89,9 +89,8 @@ def test_modulations():
                     continue
                 outdir = os.path.join(latent_dir, "{}/{}".format(cls_name, mesh_name))
                 os.makedirs(outdir, exist_ok=True)
-                features = model.sdf_model.pointnet.get_plane_features(point_cloud.cuda())
-                features = torch.cat(features, dim=1) # ([1, D*3, resolution, resolution])
-                latent = model.vae_model.get_latent(features) # (1, D*3)
+                out = model.vae_model(base_points)
+                latent = out[2]  # mu
                 np.savetxt(os.path.join(outdir, "latent.txt"), latent.cpu().numpy())
             except Exception as e:
                 print(e)
