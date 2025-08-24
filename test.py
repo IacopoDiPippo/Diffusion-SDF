@@ -45,7 +45,18 @@ def test_modulations():
         for idx, x in enumerate(pbar):
             pbar.set_description("Files evaluated: {}/{}".format(idx, len(test_dataloader)))
 
+            # scegli dispositivo
+            device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
             base_points = x['basis_point']  # (B, 1024, 3)
+
+            if isinstance(base_points, np.ndarray):
+                base_points = torch.from_numpy(base_points)
+            elif not isinstance(base_points, torch.Tensor):
+                base_points = torch.as_tensor(base_points)
+
+            base_points = base_points.to(device=device, dtype=torch.float32).contiguous()
+            
             point_cloud = x['point_cloud']
             filename = x['paths'] # filename = path to the csv file of sdf data
             print(filename)
