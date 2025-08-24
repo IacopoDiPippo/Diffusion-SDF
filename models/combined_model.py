@@ -385,7 +385,7 @@ class CombinedModel(pl.LightningModule):
         
         # STEP 5: use predicted / reconstructed latent to run SDF loss 
         generated_plane_feature = self.vae_model.decode(pred_latent)
-        generated_sdf_pred = self.sdf_model.forward_with_with_base_features(generated_plane_feature, xyz)
+        generated_sdf_pred = self.sdf_model.forward_with_base_features(generated_plane_feature, xyz)
         generated_sdf_loss = F.l1_loss(generated_sdf_pred.squeeze(), gt.squeeze())
 
         # surface weight could prioritize points closer to surface but we did not notice better results when using it 
