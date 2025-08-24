@@ -30,7 +30,7 @@ class CombinedModel(pl.LightningModule):
             self.diffusion_model = DiffusionModel(model=DiffusionNet(**specs["diffusion_model_specs"]), **specs["diffusion_specs"]) 
             print("Structure of diffusion model ", self.diffusion_model)
  
-        self.bps_grid = self._create_bps_grid()
+
 
     def training_step(self, x, idx):
 
@@ -295,55 +295,6 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         return diff_loss
-
-    def _create_bps_grid(self, grid_size=32, radius=1.5):
-        """Create a fixed BPS reference grid."""
-        bps_grid_np = bps.generate_grid_basis(
-            grid_size=grid_size,
-            n_dims=3,
-            minv=-radius,
-            maxv=radius
-        )
-        return torch.from_numpy(bps_grid_np).float().to(self.device)
-
-    def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
-        # pointcloud: (B, N, 3)
-        batch_size = pointcloud.shape[0]
-
-        pointcloud_np = pointcloud.detach().cpu().numpy()  # (B, N, 3)
-        pc_normalized = bps.normalize(pointcloud_np)       # (B, N, 3)
-
-        # Check bps_grid consistency
-        current_grid = self.bps_grid.cpu().numpy()
-        if not hasattr(self, '_first_bps_grid'):
-            self._first_bps_grid = current_grid
-            print("✅ Saved initial bps_grid for comparison.")
-        else:
-            grid_diff = np.linalg.norm(self._first_bps_grid - current_grid)
-            if grid_diff > 1e-12:  # very tight threshold since this should be fixed
-                print(f"❗ bps_grid changed! Norm diff: {grid_diff:.12f}")
-            else:
-                print("✅ bps_grid unchanged.")
-
-        # encode with custom fixed grid basis
-        x_bps = bps.encode(
-            pc_normalized,
-            bps_arrangement='custom',
-            custom_basis=self.bps_grid.cpu().numpy(),
-            bps_cell_type='deltas',
-            n_jobs=1
-        )  # (B, n_bps_points, 3)
-
-        
-
-        x_bps_tensor = torch.from_numpy(x_bps).to(pointcloud.device, dtype=pointcloud.dtype)
-
-        # reshape if needed, e.g. (B, 32, 32, 32, 3)
-        grid_size = int(round(self.bps_grid.shape[0] ** (1/3)))
-        x_bps_tensor = x_bps_tensor.view(batch_size, grid_size, grid_size, grid_size, 3)
-
-        return x_bps_tensor
-
 
     
     # the first half is the same as "train_sdf_modulation"
