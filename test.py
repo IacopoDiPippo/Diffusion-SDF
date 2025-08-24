@@ -85,8 +85,8 @@ def test_modulations():
             try:
                 # skips modulations that have chamfer distance > 0.0018
                 # the filter also weighs gaps / empty space higher
-                if not filter_threshold(mesh_filename, point_cloud, 0.0018): 
-                    continue
+                """if not filter_threshold(mesh_filename, point_cloud, 0.0018): 
+                    continue"""
                 outdir = os.path.join(latent_dir, "{}/{}".format(cls_name, mesh_name))
                 os.makedirs(outdir, exist_ok=True)
                 out = model.vae_model(base_points)
