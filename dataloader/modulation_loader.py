@@ -73,6 +73,7 @@ class ModulationLoader(torch.utils.data.Dataset):
 
                     else:
                         instance_filename = os.path.join(data_source, class_name, instance_name, f_name)
+                        print("FFile is: ", instance_filename)
                         if not os.path.isfile(instance_filename):
                             #print("Requested non-existent file '{}'".format(instance_filename))
                             continue
