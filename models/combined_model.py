@@ -137,7 +137,7 @@ class CombinedModel(pl.LightningModule):
         out = self.vae_model(base_points)  # out = [self.decode(z), input, mu, log_var, z]
         reconstructed_base_point, latent = out[0], out[-1]
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 1000:
+        if getattr(self, "counter", 0) % 1000 == 0 :
             print("mean and std and min and max of out[2] and out[3]:")
             print("  Mean:", out[2].mean().item())
             print("  Std:", out[2].std().item())
