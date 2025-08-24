@@ -30,7 +30,6 @@ class SdfLoader(base.Dataset):
         self.pc_size = pc_size
         self.gt_files = self.get_instance_filenames(data_source, split_file, filter_modulation_path=modulation_path)
         subsample = len(self.gt_files) 
-        subsample = 1
         self.gt_files = self.gt_files[0:subsample]
         self.paths = self.gt_files
         self.grid_source = grid_source
