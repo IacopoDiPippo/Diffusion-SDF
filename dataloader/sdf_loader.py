@@ -32,7 +32,7 @@ class SdfLoader(base.Dataset):
         subsample = len(self.gt_files) 
         subsample = 1
         self.gt_files = self.gt_files[0:subsample]
-
+        self.paths = self.gt_files
         self.grid_source = grid_source
         #print("grid source: ", grid_source)
 
@@ -105,7 +105,7 @@ class SdfLoader(base.Dataset):
                     "basis_point":basis_point.float().squeeze(),
                     "grid_point":grid.float().squeeze() if self.grid_source else None,
                     "point_cloud": pc.float().squeeze(),
-                    "paths": self.gt_files[idx],
+                    "paths": self.paths[idx],
                     }
 
         return data_dict
