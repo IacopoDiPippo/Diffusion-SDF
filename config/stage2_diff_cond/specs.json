@@ -28,7 +28,7 @@
     "ff_dropout" : 0,
     "cond" : true,
     "cross_attn" : true,
-    "cond_dropout":false,
+    "cond_dropout":true,
     "point_feature_dim" : 128
   }
 }

@@ -153,8 +153,11 @@ class DiffusionNet(nn.Module):
         self.causal_transformer = CausalTransformer(dim = dim, dim_in_out=self.dim_in_out, **kwargs)
 
         if cond:
+            if self.cond_dropout:
+                self.pointnet = ConvPointnet(c_dim=self.point_feature_dim)
             # output dim of pointnet needs to match model dim; unless add additional linear layer
-            self.pointnet = PointEncoder(in_channels=3, latent_dim=self.point_feature_dim) 
+            else:
+                self.pointnet = PointEncoder(in_channels=3, latent_dim=self.point_feature_dim) 
 
 
     def forward(
@@ -185,7 +188,7 @@ class DiffusionNet(nn.Module):
             else:
                 cond_feature = self.pointnet.encode(cond)
 
-            
+        print("Cond_feature shape", cond_feature.shape)
         batch, dim, device, dtype = *data.shape, data.device, data.dtype
 
         num_time_embeds = self.num_time_embeds
