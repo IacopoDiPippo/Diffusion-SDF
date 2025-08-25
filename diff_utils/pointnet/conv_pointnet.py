@@ -171,7 +171,7 @@ class PointEncoder(nn.Module):
 
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
-        return [mu]
+        return mu
     
 
 class ConvPointnet(nn.Module):
