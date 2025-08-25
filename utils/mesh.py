@@ -49,7 +49,7 @@ def create_mesh(
 
     print("recon min/max:", sdf_values.min().item(), sdf_values.max().item())
     #print("inference time: {}".format(time.time() - start_time))
-
+    print("saved at ", ply_filename)
     convert_sdf_samples_to_ply(
         sdf_values.data,
         voxel_origin,
