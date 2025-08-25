@@ -122,7 +122,7 @@ class PointEncoder(nn.Module):
         print("pc_np shape for bps:", pc_np.shape)
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
         pc_normalized = bps.normalize(pc_np)       # shape (1, N, 3)
-
+        B = pc_np.shape[0]
         # Check if the fixed bps_grid has changed (should not change!)
         current_grid = self.bps_grid.cpu().numpy()
        
@@ -135,8 +135,9 @@ class PointEncoder(nn.Module):
             n_jobs=1
         )  # output shape: (1, n_bps_points, 3)
 
-        # Reshape to (1, 32, 32, 32, 3)
-        x_bps_grid = x_bps_grid.reshape(1, 32, 32, 32, 3)
+        R = 32  # oppure self.grid_res se ce l’hai come attributo
+        # reshape corretto con batch:
+        x_bps_grid = x_bps_grid.reshape(B, R, R, R, 3)
 
         # Permute to (1, 3, 32, 32, 32)
         x_bps_grid = x_bps_grid.transpose(0, 4, 1, 2, 3)
