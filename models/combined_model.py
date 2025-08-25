@@ -362,7 +362,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 5:
+        if getattr(self, "counter", 0) % 5== 0:
             base_dir = f"visual{self.counter}"
             os.makedirs(base_dir, exist_ok=True)
             try:
@@ -409,6 +409,7 @@ class CombinedModel(pl.LightningModule):
 
                     out_recon = os.path.join(save_root, f"{stem}_recon.csv")
                     np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+                    print(f"Saved prediction visualization to {out_recon}")
 
             except Exception as e:
                 print(f"[warn] failed to dump CSV point clouds: {e}")
