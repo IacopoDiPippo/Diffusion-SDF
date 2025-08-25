@@ -151,7 +151,8 @@ class DiffusionNet(nn.Module):
         # last input to the transformer: "a final embedding whose output from the Transformer is used to predicted the unnoised CLIP image embedding"
         self.learned_query = nn.Parameter(torch.randn(self.dim_in_out))
         self.causal_transformer = CausalTransformer(dim = dim, dim_in_out=self.dim_in_out, **kwargs)
-
+        # adattatore opzionale per cond globali (B, D_latent) -> (B, 1, point_feature_dim)
+        self.cond_proj = None
         if cond:
             if self.cond_dropout:
                 self.pointnet = ConvPointnet(c_dim=self.point_feature_dim)
