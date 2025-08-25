@@ -2,7 +2,7 @@
   "Description" : "diffusion training (conditional) on couch dataset",
   "pc_path" : "data",
   "total_pc_size" : 10000,
-  "TrainSplit" : "data/splits/couch_mug_1.json",
+  "TrainSplit" : "data/splits/couch_mug_all.json",
   "TestSplit" : "data/splits/couch_mug_all.json",
   "data_path" : "config/stage1_sdf/modulations",
 
