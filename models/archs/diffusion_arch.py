@@ -170,24 +170,60 @@ class DiffusionNet(nn.Module):
     ):
 
         if self.cond:
-            assert type(data) is tuple
-            data, cond = data # adding noise to cond_feature so doing this in diffusion.py
+            assert isinstance(data, tuple), "Con cond=True, 'data' deve essere (x_t, cond)"
+            data, cond = data  # data: [B, D]; cond: può essere [B, N, 3] (PC) OPPURE [B, D_latent] (latente globale)
 
-            #print("data, cond shape: ", data.shape, cond.shape) # B, dim_in_out; B, N, 3
-            #print("pass cond: ", pass_cond)
-            if self.cond_dropout:
-                # classifier-free guidance: 20% unconditional 
-                prob = torch.randint(low=0, high=10, size=(1,))
-                percentage = 8
-                if prob < percentage or pass_cond==0:
-                    cond_feature = torch.zeros( (cond.shape[0], cond.shape[1], self.point_feature_dim), device=data.device )
-                    #print("zeros shape: ", cond_feature.shape) 
-                elif prob >= percentage or pass_cond==1:
-                    cond_feature = self.pointnet(cond, cond)
-                    #print("cond shape: ", cond_feature.shape)
-                    #IGNORATI PER ORA SELF.CONDDROPOUT TRUE!!!!!!!!!
+            # 1) ricava un Tensor 'cond_feature' su device con shape o (B, D_*) o (B, N, D_*)
+            if isinstance(cond, (list, tuple)):
+                cond = cond[0]
+            if not torch.is_tensor(cond):
+                cond = torch.as_tensor(cond)
+
+            cond = cond.to(data.device).float()
+
+            # a) caso POINT CLOUD: (B, N, 3) --> estrai embedding con PointNet/PointEncoder (tipicamente (B, D_ctx))
+            if cond.ndim == 3 and cond.shape[-1] == 3:
+                # se usi PointEncoder.encode restituisce (B, D) oppure (B, N_ctx, D) in base alla tua implementazione
+                if self.cond_dropout:
+                    # classifier-free guidance (se attivo): qui potresti mettere la tua logica prob/percentage
+                    cond_feature = self.pointnet(cond, cond)  # tendente a (B, N_ctx, D_ctx)
+                else:
+                    cond_feature = self.pointnet.encode(cond)  # spesso (B, D_ctx)
+
+            # b) caso LATENTE GLOBALE: (B, D_latent) --> usalo direttamente
+            elif cond.ndim == 2:
+                cond_feature = cond  # (B, D_latent)
+
+            # c) caso già tokenizzato: (B, N_ctx, D_ctx)
+            elif cond.ndim == 3:
+                cond_feature = cond
+
             else:
-                cond_feature = self.pointnet.encode(cond)
+                raise ValueError(f"Shape cond inattesa: {tuple(cond.shape)}")
+
+            # 2) porta SEMPRE a forma (B, N_ctx, D_ctx): se è (B, D) diventa (B, 1, D)
+            if cond_feature.dim() == 2:
+                cond_feature = cond_feature.unsqueeze(1)  # (B, 1, D_ctx)
+
+            # 3) adatta la dim di feature a quella attesa dal cross-attn (point_feature_dim)
+            D_in = cond_feature.size(-1)
+            if D_in != self.point_feature_dim:
+                if (self.cond_proj is None) or (self.cond_proj.in_features != D_in) or (self.cond_proj.out_features != self.point_feature_dim):
+                    self.cond_proj = nn.Linear(D_in, self.point_feature_dim, bias=False).to(cond_feature.device)
+                cond_feature = self.cond_proj(cond_feature)
+
+            # 4) (opzionale) classifier-free guidance: azzera per ramo unconditional
+            if self.cond_dropout:
+                # Esempio semplice: 20% unconditional
+                prob = torch.randint(0, 10, (1,), device=data.device)
+                if prob < 2 or pass_cond == 0:
+                    cond_feature = torch.zeros_like(cond_feature)
+                elif pass_cond == 1:
+                    pass  # lascia cond_feature intatto
+
+        else:
+            cond_feature = None
+
 
         print("Cond_feature shape", cond_feature.shape)
         batch, dim, device, dtype = *data.shape, data.device, data.dtype
