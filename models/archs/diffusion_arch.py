@@ -171,58 +171,54 @@ class DiffusionNet(nn.Module):
 
         if self.cond:
             assert isinstance(data, tuple), "Con cond=True, 'data' deve essere (x_t, cond)"
-            data, cond = data  # data: [B, D]; cond: può essere [B, N, 3] (PC) OPPURE [B, D_latent] (latente globale)
+            data, cond = data
 
-            # 1) ricava un Tensor 'cond_feature' su device con shape o (B, D_*) o (B, N, D_*)
+            # ottieni Tensor su device
             if isinstance(cond, (list, tuple)):
                 cond = cond[0]
             if not torch.is_tensor(cond):
                 cond = torch.as_tensor(cond)
-
             cond = cond.to(data.device).float()
 
-            # a) caso POINT CLOUD: (B, N, 3) --> estrai embedding con PointNet/PointEncoder (tipicamente (B, D_ctx))
+            # 1) estrai cond_feature
             if cond.ndim == 3 and cond.shape[-1] == 3:
-                # se usi PointEncoder.encode restituisce (B, D) oppure (B, N_ctx, D) in base alla tua implementazione
+                # caso point cloud -> encoder
                 if self.cond_dropout:
-                    # classifier-free guidance (se attivo): qui potresti mettere la tua logica prob/percentage
-                    cond_feature = self.pointnet(cond, cond)  # tendente a (B, N_ctx, D_ctx)
+                    cond_feature = self.pointnet(cond, cond)   # di solito (B, N_ctx, D_ctx) oppure (B, D_ctx)
                 else:
-                    cond_feature = self.pointnet.encode(cond)  # spesso (B, D_ctx)
-
-            # b) caso LATENTE GLOBALE: (B, D_latent) --> usalo direttamente
+                    cond_feature = self.pointnet.encode(cond)  # nel tuo log: (B, 128)
             elif cond.ndim == 2:
-                cond_feature = cond  # (B, D_latent)
-
-            # c) caso già tokenizzato: (B, N_ctx, D_ctx)
-            elif cond.ndim == 3:
+                # caso latente globale (B, D_latent)
                 cond_feature = cond
-
+            elif cond.ndim == 3:
+                # già tokenizzato (B, N_ctx, D_ctx)
+                cond_feature = cond
             else:
                 raise ValueError(f"Shape cond inattesa: {tuple(cond.shape)}")
 
-            # 2) porta SEMPRE a forma (B, N_ctx, D_ctx): se è (B, D) diventa (B, 1, D)
+            # 2) forza la forma (B, N_ctx, D_ctx) -> se è (B, D) diventa (B, 1, D)
             if cond_feature.dim() == 2:
-                cond_feature = cond_feature.unsqueeze(1)  # (B, 1, D_ctx)
+                cond_feature = cond_feature.unsqueeze(1)       # (B, 1, D_ctx)
 
-            # 3) adatta la dim di feature a quella attesa dal cross-attn (point_feature_dim)
+            # 3) adatta la dim delle feature al kv_dim atteso (point_feature_dim)
             D_in = cond_feature.size(-1)
             if D_in != self.point_feature_dim:
-                if (self.cond_proj is None) or (self.cond_proj.in_features != D_in) or (self.cond_proj.out_features != self.point_feature_dim):
+                if not hasattr(self, 'cond_proj') or \
+                (self.cond_proj.in_features != D_in) or \
+                (self.cond_proj.out_features != self.point_feature_dim):
                     self.cond_proj = nn.Linear(D_in, self.point_feature_dim, bias=False).to(cond_feature.device)
-                cond_feature = self.cond_proj(cond_feature)
+                cond_feature = self.cond_proj(cond_feature)    # ora (B, N_ctx, point_feature_dim)
 
-            # 4) (opzionale) classifier-free guidance: azzera per ramo unconditional
+            # 4) (opzionale) classifier-free guidance: azzera il contesto per l'unconditional
             if self.cond_dropout:
-                # Esempio semplice: 20% unconditional
                 prob = torch.randint(0, 10, (1,), device=data.device)
-                if prob < 2 or pass_cond == 0:
+                if prob < 2 or pass_cond == 0:                 # ~20% uncond
                     cond_feature = torch.zeros_like(cond_feature)
                 elif pass_cond == 1:
-                    pass  # lascia cond_feature intatto
-
+                    pass
         else:
             cond_feature = None
+
 
 
         print("Cond_feature shape", cond_feature.shape)
