@@ -118,8 +118,7 @@ class PointEncoder(nn.Module):
         if not (pc_np.ndim == 3 and pc_np.shape[-1] == 3):
             raise ValueError(f"Point cloud shape inattesa: {pc_np.shape}, atteso (B,N,3)")
 
-        # DEBUG (una volta sola)
-        print("pc_np shape for bps:", pc_np.shape)
+
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
         pc_normalized = bps.normalize(pc_np)       # shape (1, N, 3)
         B = pc_np.shape[0]
