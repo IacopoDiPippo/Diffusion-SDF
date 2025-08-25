@@ -361,4 +361,56 @@ class CombinedModel(pl.LightningModule):
                     }
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
+        # ==== SAVE DEBUG CSVs ====
+        if getattr(self, "counter", 0) == 5000:
+            base_dir = f"visual{self.counter}"
+            os.makedirs(base_dir, exist_ok=True)
+            try:
+                save_root = base_dir
+                os.makedirs(save_root, exist_ok=True)
+
+                # nomi comodi per versionare i file
+                def make_stem(bidx: int) -> str:
+                    # usa global_step se disponibile, altrimenti fallback a self.counter
+                    gstep = int(getattr(self, "global_step", self.counter))
+                    return f"ep{int(self.current_epoch):03d}_gs{gstep:06d}_b{bidx}"
+
+                # assicurati che le robe siano sul CPU per salvare
+                xyz_cpu   = xyz.detach().cpu()                         # [B, M, 3]
+                sdf_cpu   = generated_sdf_pred.detach().cpu().squeeze(-1)  # [B, M]
+                if 'perturbed_pc' in locals() and perturbed_pc is not None:
+                    ppc_cpu = perturbed_pc.detach().cpu()              # [B, N, 3]
+                else:
+                    ppc_cpu = None
+
+                B = xyz_cpu.shape[0]
+                for b in range(B):
+                    stem = make_stem(b)
+
+                    # 1) salva la point cloud perturbata (se presente)
+                    if ppc_cpu is not None and ppc_cpu.ndim == 3:
+                        out_ppc = os.path.join(save_root, f"{stem}_perturbed_pc.csv")
+                        np.savetxt(out_ppc, ppc_cpu[b].numpy(), delimiter=",")
+
+                    # 2) salva la ricostruzione come point cloud
+                    #    prendi i punti con |SDF| < tau; se zero match, prendi i più vicini allo zero
+                    tau = 1e-2
+                    sdf_b = sdf_cpu[b]          # [M]
+                    xyz_b = xyz_cpu[b]          # [M, 3]
+                    mask  = (sdf_b.abs() < tau)
+
+                    if mask.any():
+                        recon_pts = xyz_b[mask]
+                    else:
+                        M = sdf_b.numel()
+                        k = max(1, min(10000, M // 10))  # top 10% fino a 10k punti
+                        idx = torch.topk(-sdf_b.abs(), k).indices
+                        recon_pts = xyz_b[idx]
+
+                    out_recon = os.path.join(save_root, f"{stem}_recon.csv")
+                    np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+
+            except Exception as e:
+                print(f"[warn] failed to dump CSV point clouds: {e}")
+        self.counter = getattr(self, "counter", 0) + 1
         return loss
