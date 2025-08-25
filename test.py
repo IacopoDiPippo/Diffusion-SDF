@@ -25,6 +25,7 @@ from diff_utils.helpers import *
 #from metrics import evaluation_metrics
 
 from dataloader.sdf_loader import SdfLoader
+from dataloader.pc_loader import PCloader
 
 @torch.no_grad()
 def test_modulations():
@@ -56,7 +57,7 @@ def test_modulations():
                 base_points = torch.as_tensor(base_points)
 
             base_points = base_points.to(device=device, dtype=torch.float32).contiguous()
-            
+
             point_cloud = x['point_cloud']
             filename = x['paths'] # filename = path to the csv file of sdf data
             print(filename)

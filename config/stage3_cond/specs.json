@@ -39,10 +39,10 @@
   "diffusion_model_specs": {
     "dim" : 256,
     "depth" : 4,
-    "ff_dropout" : 0.3,
+    "ff_dropout" : 0,
     "cond" : true,
     "cross_attn" : true,
-    "cond_dropout":true,
+    "cond_dropout":false,
     "point_feature_dim" : 128
   }
 }
