@@ -96,7 +96,7 @@ class PointEncoder(nn.Module):
 
         # Add batch dimension (needed for bps functions expecting [batch, points, dims])
         pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
-
+        print("pc shape before normalize:", pointcloud_np.shape, type(pointcloud_np))
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
         pc_normalized = bps.normalize(pointcloud_np)       # shape (1, N, 3)
 
@@ -129,7 +129,7 @@ class PointEncoder(nn.Module):
         :enc_input: (Tensor) Input tensor to encoder [B x D x resolution x resolution]
         :return: (Tensor) List of latent codes
         """
-
+        
         # Apply basis point encoding to the pointcloud
         pc_bps = self.get_base_points(pc)
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
