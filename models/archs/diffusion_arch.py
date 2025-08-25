@@ -154,7 +154,7 @@ class DiffusionNet(nn.Module):
 
         if cond:
             # output dim of pointnet needs to match model dim; unless add additional linear layer
-            self.pointnet = ConvPointnet(c_dim=self.point_feature_dim) 
+            self.pointnet = PointEncoder(in_channels=3, latent_dim=self.point_feature_dim) 
 
 
     def forward(
@@ -183,7 +183,7 @@ class DiffusionNet(nn.Module):
                     #print("cond shape: ", cond_feature.shape)
                     #IGNORATI PER ORA SELF.CONDDROPOUT TRUE!!!!!!!!!
             else:
-                cond_feature = self.pointnet(cond)
+                cond_feature = self.pointnet.encode(cond)
 
             
         batch, dim, device, dtype = *data.shape, data.device, data.dtype

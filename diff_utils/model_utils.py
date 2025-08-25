@@ -8,7 +8,7 @@ from einops.layers.torch import Rearrange
 from einops_exts import rearrange_many, repeat_many, check_shape
 
 from .pointnet.pointnet_classifier import PointNetClassifier
-from .pointnet.conv_pointnet import ConvPointnet
+from .pointnet.conv_pointnet import ConvPointnet, PointEncoder
 from .pointnet.dgcnn import DGCNN
 
 from .helpers import *
