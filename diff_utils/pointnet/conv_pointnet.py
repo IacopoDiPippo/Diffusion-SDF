@@ -167,7 +167,6 @@ class PointEncoder(nn.Module):
 
         pc_bps = pc_bps.to(device=device, dtype=torch.float32).contiguous()
         result = self.encoder(pc_bps)  # [B, D, 4, 4, 4]
-        self.debug_shapes(enc_input = pc, result = result)
         result = torch.flatten(result, start_dim=1) # ([B, D*4*4*4])
 
         # of the latent Gaussian distribution
