@@ -181,8 +181,9 @@ class DiffusionNet(nn.Module):
                 elif prob >= percentage or pass_cond==1:
                     cond_feature = self.pointnet(cond, cond)
                     #print("cond shape: ", cond_feature.shape)
+                    #IGNORATI PER ORA SELF.CONDDROPOUT TRUE!!!!!!!!!
             else:
-                cond_feature = self.pointnet(cond, cond)
+                cond_feature = self.pointnet(cond)
 
             
         batch, dim, device, dtype = *data.shape, data.device, data.dtype

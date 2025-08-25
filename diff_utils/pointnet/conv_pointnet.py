@@ -2,9 +2,155 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
+#!/usr/bin/env python3
+
+import torch
+import torch.utils.data
+from . import base 
+from bps import bps
+import pandas as pd 
+import numpy as np
+import csv, json
+
+from tqdm import tqdm
 
 from torch_scatter import scatter_mean, scatter_max
 
+
+from typing import List, Callable, Union, Any, TypeVar, Tuple
+Tensor = TypeVar('torch.tensor')
+
+
+class PointEncoder(nn.Module):
+
+    num_iter = 0 # Global static variable to keep track of iterations
+
+    def __init__(self,
+                 in_channels: int,
+                 latent_dim: int,
+                 hidden_dims: List = None,
+                 max_capacity: int = 25,
+                 Capacity_max_iter: int = 1e5, # 10000 in default configs,
+                 **kwargs) -> None:
+        super(PointEncoder, self).__init__()
+
+        self.latent_dim = latent_dim
+        self.C_max = torch.Tensor([max_capacity])
+        self.C_stop_iter = Capacity_max_iter
+        self.in_channels = in_channels
+
+        #print("kl standard deviation: ", self.kl_std)
+
+        modules = []
+
+        if hidden_dims is None:
+            hidden_dims = [16, 32, 64, 128, 256, 64]
+
+        
+        strides = [1, 2, 2, 1, 2, 1]  # default: solo due con stride 2
+
+        assert len(strides) == len(hidden_dims), "Length of `strides` must match `hidden_dims`"
+
+        self.hidden_dims = hidden_dims
+
+        # Build Encoder
+        for h_dim, stride in zip(hidden_dims, strides):
+            modules.append(
+                nn.Sequential(
+                    nn.Conv3d(in_channels, out_channels=h_dim, kernel_size=3, stride=stride, padding=1),
+                    nn.BatchNorm3d(h_dim),
+                    nn.LeakyReLU())
+            )
+            in_channels = h_dim
+
+
+
+        self.encoder = nn.Sequential(*modules)
+        self.fc_mu = nn.Linear(hidden_dims[-1]*4*4*4, latent_dim)  # for plane features resolution 64x64, spatial resolution is 2x2 after the last encoder layer
+
+        self.bps_grid = self._create_bps_grid(grid_size=32, radius=1.5)
+
+    def _create_bps_grid(self, grid_size=32, radius=1.5):
+        """Create a fixed BPS reference grid."""
+        bps_grid_np = bps.generate_grid_basis(
+            grid_size=grid_size,
+            n_dims=3,
+            minv=-radius,
+            maxv=radius
+        )
+        return torch.from_numpy(bps_grid_np).float()
+
+    def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize a single pointcloud and encode it into BPS features 
+        using a fixed, precomputed BPS grid basis.
+
+        Parameters:
+            pointcloud: torch.Tensor, shape (N, 3)
+                Single point cloud.
+
+        Returns:
+            torch.Tensor with BPS encoding of shape (n_bps_points, 3)
+        """
+        # Convert to numpy for bps operations
+        pointcloud_np = pointcloud.detach().cpu().numpy()  # shape (N, 3)
+
+        # Add batch dimension (needed for bps functions expecting [batch, points, dims])
+        pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
+
+        # Normalize (assuming bps.normalize can handle (N,3) arrays)
+        pc_normalized = bps.normalize(pointcloud_np)       # shape (1, N, 3)
+
+        # Check if the fixed bps_grid has changed (should not change!)
+        current_grid = self.bps_grid.cpu().numpy()
+       
+        # Encode using fixed custom BPS grid
+        x_bps_grid = bps.encode(
+            pc_normalized,
+            bps_arrangement='custom',
+            custom_basis=current_grid,
+            bps_cell_type='deltas',
+            n_jobs=1
+        )  # output shape: (1, n_bps_points, 3)
+
+        # Reshape to (1, 32, 32, 32, 3)
+        x_bps_grid = x_bps_grid.reshape(1, 32, 32, 32, 3)
+
+        # Permute to (1, 3, 32, 32, 32)
+        x_bps_grid = x_bps_grid.transpose(0, 4, 1, 2, 3)
+
+        return torch.from_numpy(x_bps_grid).float().squeeze(0)
+
+
+
+    def encode(self, pc: Tensor) -> List[Tensor]:
+        """
+        Encodes the input by passing through the encoder network
+        and returns the latent codes.
+        :enc_input: (Tensor) Input tensor to encoder [B x D x resolution x resolution]
+        :return: (Tensor) List of latent codes
+        """
+
+        # Apply basis point encoding to the pointcloud
+        pc_bps = self.get_base_points(pc)
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
+
+        if isinstance(pc_bps, np.ndarray):
+            pc_bps = torch.from_numpy(pc_bps)
+        elif not isinstance(pc_bps, torch.Tensor):
+            pc_bps = torch.as_tensor(pc_bps)
+
+        pc_bps = pc_bps.to(device=device, dtype=torch.float32).contiguous()
+        result = self.encoder(pc_bps)  # [B, D, 4, 4, 4]
+        self.debug_shapes(enc_input = pc, result = result)
+        result = torch.flatten(result, start_dim=1) # ([B, D*4*4*4])
+
+        # of the latent Gaussian distribution
+        mu = self.fc_mu(result)
+        return [mu]
+    
 
 class ConvPointnet(nn.Module):
     ''' PointNet-based encoder network with ResNet blocks for each point.
