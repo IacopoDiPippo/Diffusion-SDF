@@ -6,7 +6,6 @@ from torch.nn import init
 
 import torch
 import torch.utils.data
-from . import base 
 from bps import bps
 import pandas as pd 
 import numpy as np
