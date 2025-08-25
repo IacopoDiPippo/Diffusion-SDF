@@ -96,7 +96,30 @@ class PointEncoder(nn.Module):
 
         # Add batch dimension (needed for bps functions expecting [batch, points, dims])
         pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
-        print("pc shape before normalize:", pointcloud_np.shape, type(pointcloud_np))
+        device = pointcloud.device if isinstance(pointcloud, torch.Tensor) else None
+
+        # --> converti a numpy
+        if isinstance(pointcloud, torch.Tensor):
+            pc_np = pointcloud.detach().cpu().numpy()
+        else:
+            pc_np = np.asarray(pointcloud)
+
+        # --> normalizza le dimensioni
+        if pc_np.ndim == 2 and pc_np.shape[-1] == 3:
+            # (N,3) -> (1,N,3)
+            pc_np = pc_np[None, ...]
+        elif pc_np.ndim == 4 and pc_np.shape[1] == 1 and pc_np.shape[-1] == 3:
+            # (B,1,N,3) -> (B,N,3)
+            pc_np = pc_np[:, 0, ...]
+        elif pc_np.ndim == 3 and pc_np.shape[1] == 3 and pc_np.shape[-1] != 3:
+            # (B,3,N) -> (B,N,3)
+            pc_np = np.transpose(pc_np, (0, 2, 1))
+
+        if not (pc_np.ndim == 3 and pc_np.shape[-1] == 3):
+            raise ValueError(f"Point cloud shape inattesa: {pc_np.shape}, atteso (B,N,3)")
+
+        # DEBUG (una volta sola)
+        print("pc_np shape for bps:", pc_np.shape)
         # Normalize (assuming bps.normalize can handle (N,3) arrays)
         pc_normalized = bps.normalize(pointcloud_np)       # shape (1, N, 3)
 
