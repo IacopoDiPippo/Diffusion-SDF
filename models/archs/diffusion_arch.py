@@ -220,8 +220,6 @@ class DiffusionNet(nn.Module):
             cond_feature = None
 
 
-
-        print("Cond_feature shape", cond_feature.shape)
         batch, dim, device, dtype = *data.shape, data.device, data.dtype
 
         num_time_embeds = self.num_time_embeds
