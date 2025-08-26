@@ -413,5 +413,195 @@ class CombinedModel(pl.LightningModule):
 
             except Exception as e:
                 print(f"[warn] failed to dump CSV point clouds: {e}")
+
+            # === RE-RUN FORWARD TWICE WITH IDENTICAL INPUTS & SAVE ===
+            try:
+                import os, numpy as np, torch
+
+                # Metti la diffusion temporaneamente in eval per evitare dropout ecc.
+                was_training_dm = self.diffusion_model.training
+                self.diffusion_model.eval()
+
+                with torch.no_grad():
+                    device = latent.device
+                    B = latent.shape[0]
+
+                    # Generatore deterministico (varialo se vuoi per step diversi)
+                    g = torch.Generator(device=device).manual_seed(int(self.counter))
+
+                    # Stesso timestep per tutti i B (come nel training è per-sample; qui li teniamo per-sample ma deterministici)
+                    t_fixed = torch.randint(
+                        low=0, high=self.diffusion_model.num_timesteps,
+                        size=(B,), generator=g, device=device
+                    ).long()
+
+                    # Stesso rumore per l'input (shape come latent)
+                    noise_fixed = torch.randn_like(latent, generator=g)
+
+                    # Stessa condizione: RIUSO la perturbed_pc già usata nella prima chiamata
+                    cond_fixed = perturbed_pc if perturbed_pc is not None else None
+
+                    # 1) primo forward identico
+                    _, xA, _, pred_latent_A, _ = self.diffusion_model(
+                        latent, t_fixed, ret_pred_x=True, noise=noise_fixed, cond=cond_fixed
+                    )
+                    gen_feat_A = self.vae_model.decode(pred_latent_A)
+                    gen_sdf_A  = self.sdf_model.forward_with_base_features(gen_feat_A, xyz)
+
+                    # 2) secondo forward identico (stesso t e noise)
+                    _, xB, _, pred_latent_B, _ = self.diffusion_model(
+                        latent, t_fixed, ret_pred_x=True, noise=noise_fixed, cond=cond_fixed
+                    )
+                    gen_feat_B = self.vae_model.decode(pred_latent_B)
+                    gen_sdf_B  = self.sdf_model.forward_with_base_features(gen_feat_B, xyz)
+
+                # ripristina lo stato training se serviva
+                if was_training_dm:
+                    self.diffusion_model.train()
+
+                # --- salvataggio CSV per A/B con la stessa logica del tuo blocco ---
+                xyz_cpu = xyz.detach().cpu()                                  # (B, M, 3)
+                sdfA_cpu = gen_sdf_A.detach().cpu().squeeze(-1)               # (B, M)
+                sdfB_cpu = gen_sdf_B.detach().cpu().squeeze(-1)               # (B, M)
+
+                for b in range(B):
+                    stem = make_stem(b)  # riuso il tuo helper definito sopra
+
+                    # recon A
+                    tau = 1e-2
+                    sdf_b = sdfA_cpu[b]
+                    xyz_b = xyz_cpu[b]
+                    mask = (sdf_b.abs() < tau)
+                    if mask.any():
+                        recon_pts_A = xyz_b[mask]
+                    else:
+                        M = sdf_b.numel()
+                        k = max(1, min(10000, M // 10))
+                        idx = torch.topk(-sdf_b.abs(), k).indices
+                        recon_pts_A = xyz_b[idx]
+                    out_recon_A = os.path.join(save_root, f"{stem}_recon_sameA.csv")
+                    np.savetxt(out_recon_A, recon_pts_A.numpy(), delimiter=",")
+                    print(f"Saved SAME-INPUT recon A to {out_recon_A}")
+
+                    # recon B
+                    sdf_b = sdfB_cpu[b]
+                    mask = (sdf_b.abs() < tau)
+                    if mask.any():
+                        recon_pts_B = xyz_b[mask]
+                    else:
+                        M = sdf_b.numel()
+                        k = max(1, min(10000, M // 10))
+                        idx = torch.topk(-sdf_b.abs(), k).indices
+                        recon_pts_B = xyz_b[idx]
+                    out_recon_B = os.path.join(save_root, f"{stem}_recon_sameB.csv")
+                    np.savetxt(out_recon_B, recon_pts_B.numpy(), delimiter=",")
+                    print(f"Saved SAME-INPUT recon B to {out_recon_B}")
+
+                    # opzionale: salva anche la differenza tra i latenti previsti
+                    try:
+                        diff_lat = (pred_latent_A[b] - pred_latent_B[b]).detach().abs().mean().item()
+                        print(f"[same-input] mean |Δ pred_latent| (b={b}): {diff_lat:.6e}")
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                print(f"[warn] same-input forward failed: {e}")
+
         self.counter = getattr(self, "counter", 0) + 1
+
+        # ===== VALIDATION / TEST SNAPSHOT OGNI 10 STEP =====
+        # esegue quando counter è multiplo di 10 (evita step 0)
+        if getattr(self, "counter", 0) > 0 and (self.counter % 5) == 0:
+            import os, json, numpy as np, torch
+            from torch.utils.data import DataLoader
+            from dataloader.sdf_loader import SdfLoader
+            # se serve: from <tuo_modulo_dataset> import ModulationLoader
+
+            was_training = self.training
+            self.eval()
+            device = next(self.parameters()).device
+
+            # --- costruisci il dataloader una sola volta e riusalo ---
+            if not hasattr(self, "_val_loader") or (self._val_loader is None):
+                self._val_dataset = SdfLoader(
+                        self.specs["DataSource"],
+                        split_file=self.specs["validation_path"],
+                        pc_size=self.specs.get("PCsize",1024), grid_source=self.specs.get("GridSource", None), modulation_path=self.specs.get("modulation_path", None)
+                    )
+
+                self._val_loader = DataLoader(
+                    self._val_dataset,
+                    batch_size=8,
+                    num_workers=8,
+                    shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
+                )
+
+            # dir di salvataggio
+            base_dir = getattr(self.logger, "log_dir", self.specs.get("exp_dir", "."))
+            save_root = os.path.join(base_dir, f"visual.val{self.counter}")
+            os.makedirs(save_root, exist_ok=True)
+
+            with torch.no_grad():
+                for vbi, vx in enumerate(self._val_loader):
+                    # vx è un dict come nel training: 'xyz', 'gt_sdf', 'basis_point', 'point_cloud'
+                    # -> manda tutto su device e in float
+                    def to_dev(t):
+                        return t.to(device).float() if torch.is_tensor(t) else t
+
+                    xyz_v  = to_dev(vx['xyz'])            # (B, M, 3)
+                    gt_v   = to_dev(vx['gt_sdf'])         # (B, M) o (B, M, 1)
+                    base_v = to_dev(vx['basis_point'])    # (B, 1024, 3)
+                    pc_v   = to_dev(vx['point_cloud']) if ('point_cloud' in vx and isinstance(vx['point_cloud'], torch.Tensor)) else None
+
+                    # === pipeline IDENTICA al training ===
+                    out_v = self.vae_model(base_v)                 # [decode(z), input, mu, log_var, z]
+                    recon_base_v, latent_v = out_v[0], out_v[-1]
+
+                    pred_sdf_v = self.sdf_model.forward_with_base_features(recon_base_v, xyz_v)
+
+                    cond_v = pc_v if self.specs['diffusion_model_specs']['cond'] else None
+                    diff_loss_v, _, _, pred_latent_v, perturbed_pc_v = self.diffusion_model.diffusion_model_from_latent(latent_v, cond=cond_v)
+
+                    gen_plane_feat_v = self.vae_model.decode(pred_latent_v)
+                    gen_sdf_pred_v   = self.sdf_model.forward_with_base_features(gen_plane_feat_v, xyz_v)
+
+                    # === salvataggio CSV come nel training ===
+                    # helper nome
+                    def make_stem(bidx: int) -> str:
+                        gstep = int(getattr(self, "global_step", self.counter))
+                        return f"ep{int(self.current_epoch):03d}_gs{gstep:06d}_valb{vbi}_b{bidx}"
+
+                    xyz_cpu   = xyz_v.detach().cpu()
+                    sdf_cpu   = gen_sdf_pred_v.detach().cpu().squeeze(-1)  # [B, M]
+                    ppc_cpu   = perturbed_pc_v.detach().cpu() if (perturbed_pc_v is not None) else None
+
+                    B = xyz_cpu.shape[0]
+                    for b in range(B):
+                        stem = make_stem(b)
+
+                        # salva perturbed pc, se presente
+                        if (ppc_cpu is not None) and (ppc_cpu.ndim == 3):
+                            out_ppc = os.path.join(save_root, f"{stem}_perturbed_pc.csv")
+                            np.savetxt(out_ppc, ppc_cpu[b].numpy(), delimiter=",")
+
+                        # salva "ricostruzione" come PC: punti con |SDF| < tau; fallback: più vicini allo zero
+                        tau   = 1e-2
+                        sdf_b = sdf_cpu[b]       # (M,)
+                        xyz_b = xyz_cpu[b]       # (M,3)
+                        mask  = (sdf_b.abs() < tau)
+                        if mask.any():
+                            recon_pts = xyz_b[mask]
+                        else:
+                            M = sdf_b.numel()
+                            k = max(1, min(10000, M // 10))
+                            idx = torch.topk(-sdf_b.abs(), k).indices
+                            recon_pts = xyz_b[idx]
+
+                        out_recon = os.path.join(save_root, f"{stem}_recon.csv")
+                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+
+            if was_training:
+                self.train()
+        # ===== FINE VALIDATION SNAPSHOT =====
+
         return loss

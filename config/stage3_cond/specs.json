@@ -5,6 +5,7 @@
   "TrainSplit" : "data/splits/couch_mug_all.json",
   "TestSplit" : "data/splits/couch_mug_all.json",
   "modulation_path" : "config/stage1_sdf/modulations",
+  "validation_path" : "data/splits/couch_mug_1.json",
 
   "modulation_ckpt_path" : "config/stage1_sdf/last.ckpt",
   "diffusion_ckpt_path" : "config/stage2_diff_cond/last.ckpt",
