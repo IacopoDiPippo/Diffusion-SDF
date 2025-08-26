@@ -418,97 +418,61 @@ class CombinedModel(pl.LightningModule):
             except Exception as e:
                 print(f"[warn] failed to dump CSV point clouds: {e}")
 
-            # === RE-RUN FORWARD TWICE WITH IDENTICAL INPUTS & SAVE ===
+            # === SAME INPUT, NEW STOCHASTICITY (nuovi t e noise ad ogni run) ===
             try:
 
-                # Metti la diffusion temporaneamente in eval per evitare dropout ecc.
-                was_training_dm = self.diffusion_model.training
-                self.diffusion_model.eval()
+                # Usa ESATTAMENTE gli stessi input del primo passaggio:
+                #   - latent  (uguale)
+                #   - perturbed_pc  (uguale; se None, resta None)
+                cond_same = perturbed_pc if ('perturbed_pc' in locals()) else None
+                B = latent.shape[0]
+                device = latent.device
 
-                with torch.no_grad():
-                    device = latent.device
-                    B = latent.shape[0]
+                # Quante repliche vuoi salvare con stesso input
+                num_repeats = 2  # produrrà _recon_sameB, _recon_sameC
 
-                    # Generatore deterministico (varialo se vuoi per step diversi)
-                    g = torch.Generator(device=device).manual_seed(int(self.counter))
-
-                    # Stesso timestep per tutti i B (come nel training è per-sample; qui li teniamo per-sample ma deterministici)
-                    t_fixed = torch.randint(
-                        low=0, high=self.diffusion_model.num_timesteps,
-                        size=(B,), generator=g, device=device
+                for rep in range(num_repeats):
+                    # nuovo timestep per ogni sample del batch
+                    t_rand = torch.randint(
+                        low=0,
+                        high=self.diffusion_model.num_timesteps,
+                        size=(B,),
+                        device=device
                     ).long()
 
-                    # Stesso rumore per l'input (shape come latent)
-                    noise_fixed = torch.randn_like(latent, generator=g)
-
-                    # Stessa condizione: RIUSO la perturbed_pc già usata nella prima chiamata
-                    cond_fixed = perturbed_pc if perturbed_pc is not None else None
-
-                    # 1) primo forward identico
-                    _, xA, _, pred_latent_A, _ = self.diffusion_model(
-                        latent, t_fixed, ret_pred_x=True, noise=noise_fixed, cond=cond_fixed
+                    # forward della diffusion con stesso latent e stessa cond,
+                    # MA senza noise esplicito (verrà ricampionato ogni volta)
+                    _, _, _, pred_latent_rep, _ = self.diffusion_model(
+                        latent, t_rand, ret_pred_x=True, cond=cond_same
                     )
-                    gen_feat_A = self.vae_model.decode(pred_latent_A)
-                    gen_sdf_A  = self.sdf_model.forward_with_base_features(gen_feat_A, xyz)
+                    gen_feat_rep = self.vae_model.decode(pred_latent_rep)
+                    gen_sdf_rep  = self.sdf_model.forward_with_base_features(gen_feat_rep, xyz)
 
-                    # 2) secondo forward identico (stesso t e noise)
-                    _, xB, _, pred_latent_B, _ = self.diffusion_model(
-                        latent, t_fixed, ret_pred_x=True, noise=noise_fixed, cond=cond_fixed
-                    )
-                    gen_feat_B = self.vae_model.decode(pred_latent_B)
-                    gen_sdf_B  = self.sdf_model.forward_with_base_features(gen_feat_B, xyz)
+                    # salva come point cloud vicino allo zero di SDF
+                    xyz_cpu   = xyz.detach().cpu()                      # (B, M, 3)
+                    sdf_cpu   = gen_sdf_rep.detach().cpu().squeeze(-1)  # (B, M)
 
-                # ripristina lo stato training se serviva
-                if was_training_dm:
-                    self.diffusion_model.train()
+                    for b in range(B):
+                        stem = make_stem(b)
+                        tag  = "sameB" if rep == 0 else "sameC"  # cambia suffissi se aumenti num_repeats
+                        tau  = 1e-2
+                        sdf_b = sdf_cpu[b]
+                        xyz_b = xyz_cpu[b]
+                        mask  = (sdf_b.abs() < tau)
+                        if mask.any():
+                            recon_pts = xyz_b[mask]
+                        else:
+                            M = sdf_b.numel()
+                            k = max(1, min(10000, M // 10))
+                            idx = torch.topk(-sdf_b.abs(), k).indices
+                            recon_pts = xyz_b[idx]
 
-                # --- salvataggio CSV per A/B con la stessa logica del tuo blocco ---
-                xyz_cpu = xyz.detach().cpu()                                  # (B, M, 3)
-                sdfA_cpu = gen_sdf_A.detach().cpu().squeeze(-1)               # (B, M)
-                sdfB_cpu = gen_sdf_B.detach().cpu().squeeze(-1)               # (B, M)
-
-                for b in range(B):
-                    stem = make_stem(b)  # riuso il tuo helper definito sopra
-
-                    # recon A
-                    tau = 1e-2
-                    sdf_b = sdfA_cpu[b]
-                    xyz_b = xyz_cpu[b]
-                    mask = (sdf_b.abs() < tau)
-                    if mask.any():
-                        recon_pts_A = xyz_b[mask]
-                    else:
-                        M = sdf_b.numel()
-                        k = max(1, min(10000, M // 10))
-                        idx = torch.topk(-sdf_b.abs(), k).indices
-                        recon_pts_A = xyz_b[idx]
-                    out_recon_A = os.path.join(save_root, f"{stem}_recon_sameA.csv")
-                    np.savetxt(out_recon_A, recon_pts_A.numpy(), delimiter=",")
-                    print(f"Saved SAME-INPUT recon A to {out_recon_A}")
-
-                    # recon B
-                    sdf_b = sdfB_cpu[b]
-                    mask = (sdf_b.abs() < tau)
-                    if mask.any():
-                        recon_pts_B = xyz_b[mask]
-                    else:
-                        M = sdf_b.numel()
-                        k = max(1, min(10000, M // 10))
-                        idx = torch.topk(-sdf_b.abs(), k).indices
-                        recon_pts_B = xyz_b[idx]
-                    out_recon_B = os.path.join(save_root, f"{stem}_recon_sameB.csv")
-                    np.savetxt(out_recon_B, recon_pts_B.numpy(), delimiter=",")
-                    print(f"Saved SAME-INPUT recon B to {out_recon_B}")
-
-                    # opzionale: salva anche la differenza tra i latenti previsti
-                    try:
-                        diff_lat = (pred_latent_A[b] - pred_latent_B[b]).detach().abs().mean().item()
-                        print(f"[same-input] mean |Δ pred_latent| (b={b}): {diff_lat:.6e}")
-                    except Exception:
-                        pass
+                        out_recon = os.path.join(save_root, f"{stem}_recon_{tag}.csv")
+                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+                        print(f"Saved SAME-INPUT (new t+noise) to {out_recon}")
 
             except Exception as e:
-                print(f"[warn] same-input forward failed: {e}")
+                print(f"[warn] same-input (new t+noise) forward failed: {e}")
 
         self.counter = getattr(self, "counter", 0) + 1
 
@@ -524,9 +488,10 @@ class CombinedModel(pl.LightningModule):
 
             # --- costruisci il dataloader una sola volta e riusalo ---
             if not hasattr(self, "_val_loader") or (self._val_loader is None):
+                split = json.load(open(self.specs["validation_path"], "r"))
                 self._val_dataset = SdfLoader(
                         self.specs["DataSource"],
-                        split_file=self.specs["validation_path"],
+                        split_file=split,
                         pc_size=self.specs.get("PCsize",1024), grid_source=self.specs.get("GridSource", None), modulation_path=self.specs.get("modulation_path", None)
                     )
 
