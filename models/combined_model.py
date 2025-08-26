@@ -10,6 +10,9 @@ import trimesh
 from skimage import measure
 # add paths in model/__init__.py for new models
 from models import * 
+import os, json, numpy as np, torch
+from torch.utils.data import DataLoader
+from dataloader.sdf_loader import SdfLoader
 
 class CombinedModel(pl.LightningModule):
     def __init__(self, specs):
@@ -417,7 +420,6 @@ class CombinedModel(pl.LightningModule):
 
             # === RE-RUN FORWARD TWICE WITH IDENTICAL INPUTS & SAVE ===
             try:
-                import os, numpy as np, torch
 
                 # Metti la diffusion temporaneamente in eval per evitare dropout ecc.
                 was_training_dm = self.diffusion_model.training
@@ -513,9 +515,7 @@ class CombinedModel(pl.LightningModule):
         # ===== VALIDATION / TEST SNAPSHOT OGNI 10 STEP =====
         # esegue quando counter è multiplo di 10 (evita step 0)
         if getattr(self, "counter", 0) > 0 and (self.counter % 5) == 0:
-            import os, json, numpy as np, torch
-            from torch.utils.data import DataLoader
-            from dataloader.sdf_loader import SdfLoader
+            
             # se serve: from <tuo_modulo_dataset> import ModulationLoader
 
             was_training = self.training
