@@ -469,7 +469,7 @@ class CombinedModel(pl.LightningModule):
 
                         out_recon = os.path.join(save_root, f"{stem}_recon_{tag}.csv")
                         np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                        print(f"Saved SAME-INPUT (new t+noise) to {out_recon}")
+                        print(f"Saved prediction visualization to {out_recon}")
 
             except Exception as e:
                 print(f"[warn] same-input (new t+noise) forward failed: {e}")
@@ -565,6 +565,59 @@ class CombinedModel(pl.LightningModule):
 
                         out_recon = os.path.join(save_root, f"{stem}_recon.csv")
                         np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+                        print(f"Saved prediction visualization to {out_recon}")
+
+                    # === GENERAZIONE DA NORMALE + DIFFUSIONE CONDIZIONATA ALLA POINTCLOUD ===
+                    # per ogni elemento del batch, genero K campioni partendo da N(0, I)
+                    # e uso la diffusion condizionata a pc_v[b] per “denoisare” verso un latente plausibile
+                    K = int(self.specs.get("val_gen_per_pc", 3))  # quanti campioni per point cloud
+                    use_ddim = bool(self.specs.get("val_ddim", False))
+
+                    for b in range(B):
+                        if pc_v is None:
+                            continue  # richiede condizionamento a una pointcloud
+
+                        stem = make_stem(b)
+                        pc_single = pc_v[b:b+1]  # (1, N, 3)
+
+                        # usa l'helper già robusto del modello (fa anche la perturbazione coerente col training)
+                        # NB: generate_from_pc lavora meglio con batch=1 per volta, così eviti mix tra batch
+                        samp_b, pert_pc_b = self.diffusion_model.generate_from_pc(
+                            pc_single, batch=K, save_pc=None, return_pc=True, ddim=use_ddim, perturb_pc=True
+                        )  # samp_b: (K, dim_latent)  |  pert_pc_b: (1, N, 3)
+
+                        # salva la point cloud perturbata usata per la condizione (una volta per b)
+                        if pert_pc_b is not None and pert_pc_b.ndim == 3:
+                            out_ppc = os.path.join(save_root, f"{stem}_gennorm_perturbed_pc.csv")
+                            np.savetxt(out_ppc, pert_pc_b.squeeze(0).cpu().numpy(), delimiter=",")
+
+                        # decodifica ogni latente generato e calcola SDF sugli stessi xyz del valid
+                        plane_feats_b = self.vae_model.decode(samp_b)                # (K, feat_dim)
+                        xyz_b = xyz_v[b:b+1]                                         # (1, M, 3)
+                        xyz_rep = xyz_b.repeat(plane_feats_b.shape[0], 1, 1)         # (K, M, 3)
+                        gen_sdf_b = self.sdf_model.forward_with_base_features(plane_feats_b, xyz_rep)  # (K, M, 1) o (K, M)
+
+                        # salva K ricostruzioni come point cloud: |SDF| < tau (fallback ai più vicini allo zero)
+                        tau = 1e-2
+                        gen_sdf_cpu = gen_sdf_b.detach().cpu().squeeze(-1)  # (K, M)
+                        xyz_cpu_b   = xyz_rep.detach().cpu()                # (K, M, 3)
+
+                        for j in range(plane_feats_b.shape[0]):
+                            sdf_j = gen_sdf_cpu[j]     # (M,)
+                            xyz_j = xyz_cpu_b[j]       # (M, 3)
+                            mask  = (sdf_j.abs() < tau)
+                            if mask.any():
+                                recon_pts = xyz_j[mask]
+                            else:
+                                Mpts = sdf_j.numel()
+                                k = max(1, min(10000, Mpts // 10))
+                                idx = torch.topk(-sdf_j.abs(), k).indices
+                                recon_pts = xyz_j[idx]
+
+                            out_recon = os.path.join(save_root, f"{stem}_gennorm{j}_recon.csv")
+                            np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+                            print(f"Saved cond-gen from Normal to {out_recon}")
+                    # === FINE GENERAZIONE CONDIZIONATA ===
 
             if was_training:
                 self.train()
