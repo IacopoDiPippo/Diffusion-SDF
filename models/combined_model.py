@@ -503,7 +503,9 @@ class CombinedModel(pl.LightningModule):
                 )
             print("Len VALDATALOADER", len(self._val_loader))
             # dir di salvataggio
-            os.makedirs(save_root, exist_ok=True)
+            base_dir = f"visual{self.counter}"
+            os.makedirs(base_dir, exist_ok=True)
+            save_root = base_dir
 
             with torch.no_grad():
                 for vbi, vx in enumerate(self._val_loader):
