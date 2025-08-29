@@ -501,10 +501,8 @@ class CombinedModel(pl.LightningModule):
                     num_workers=8,
                     shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
                 )
-
+            print("Len VALDATALOADER", len(self._val_loader))
             # dir di salvataggio
-            base_dir = getattr(self.logger, "log_dir", self.specs.get("exp_dir", "."))
-            save_root = os.path.join(base_dir, f"visual.val{self.counter}")
             os.makedirs(save_root, exist_ok=True)
 
             with torch.no_grad():
