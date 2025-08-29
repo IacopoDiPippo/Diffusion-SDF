@@ -418,6 +418,67 @@ class CombinedModel(pl.LightningModule):
             except Exception as e:
                 print(f"[warn] failed to dump CSV point clouds: {e}")
 
+            # === GENERAZIONE DA NORMALE + DIFFUSIONE CONDIZIONATA ALLA PC DI TRAIN ===
+            try:
+                # quante generazioni per ogni PC del batch
+                K = int(self.specs.get("train_gen_per_pc", 3))
+                use_ddim = bool(self.specs.get("train_ddim", False))
+
+                # alias comodi
+                device = latent.device
+                B = pc.shape[0] if isinstance(pc, torch.Tensor) else 0
+
+                for b in range(B):
+                    if not isinstance(pc, torch.Tensor):
+                        break  # serve una point cloud di condizionamento
+
+                    stem = make_stem(b)
+                    pc_single = pc[b:b+1]  # (1, N, 3)
+
+                    # genera K latenti partendo da N(0,I) con diffusion condizionata a questa pc
+                    samp_b, pert_pc_b = self.diffusion_model.generate_from_pc(
+                        pc_single, batch=K, save_pc=None, return_pc=True, ddim=use_ddim, perturb_pc=True
+                    )  # samp_b: (K, dim_latent)  |  pert_pc_b: (1, N, 3)
+
+                    # salva la pc perturbata effettivamente usata (una volta per b)
+                    if pert_pc_b is not None and pert_pc_b.ndim == 3:
+                        out_ppc = os.path.join(save_root, f"{stem}_gennorm_perturbed_pc.csv")
+                        np.savetxt(out_ppc, pert_pc_b.squeeze(0).detach().cpu().numpy(), delimiter=",")
+
+                    # decodifica e valuta SDF sugli stessi xyz del batch di training
+                    plane_feats_b = self.vae_model.decode(samp_b)                 # (K, feat_dim)
+                    xyz_b   = xyz[b:b+1]                                          # (1, M, 3)
+                    xyz_rep = xyz_b.repeat(plane_feats_b.shape[0], 1, 1)          # (K, M, 3)
+                    gen_sdf_b = self.sdf_model.forward_with_base_features(plane_feats_b, xyz_rep)  # (K, M) o (K, M, 1)
+
+                    # salva K ricostruzioni come point cloud (|SDF| < tau, fallback ai più vicini a 0)
+                    tau = 1e-2
+                    gen_sdf_cpu = gen_sdf_b.detach().cpu()
+                    if gen_sdf_cpu.ndim == 3:
+                        gen_sdf_cpu = gen_sdf_cpu.squeeze(-1)                     # (K, M)
+                    xyz_cpu_b = xyz_rep.detach().cpu()                             # (K, M, 3)
+
+                    for j in range(plane_feats_b.shape[0]):
+                        sdf_j = gen_sdf_cpu[j]         # (M,)
+                        xyz_j = xyz_cpu_b[j]           # (M, 3)
+                        mask  = (sdf_j.abs() < tau)
+                        if mask.any():
+                            recon_pts = xyz_j[mask]
+                        else:
+                            Mpts = sdf_j.numel()
+                            k = max(1, min(10000, Mpts // 10))
+                            idx = torch.topk(-sdf_j.abs(), k).indices
+                            recon_pts = xyz_j[idx]
+
+                        out_recon = os.path.join(save_root, f"{stem}_gennorm{j}_recon.csv")
+                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
+                        print(f"[train] Saved cond-gen from Normal -> {out_recon}")
+
+            except Exception as e:
+                print(f"[warn][train] cond-gen from Normal failed: {e}")
+            # === FINE GENERAZIONE CONDIZIONATA (TRAIN) ===
+
+
             # === SAME INPUT, NEW STOCHASTICITY (nuovi t e noise ad ogni run) ===
             try:
 
