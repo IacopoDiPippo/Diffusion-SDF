@@ -1,15 +1,53 @@
 import os
+import json
 import numpy as np
 import trimesh
 import point_cloud_utils as pcu
 from tqdm import tqdm
 
+# ============================================================
 # Constants
-SHAPENET_couch_CATEGORY = "04256520"  # Official ShapeNet category ID for couches
+# ============================================================
+SHAPENET_MUG_CATEGORY = "03797390"  # Official ShapeNet category ID for mugs
 MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID directory
 
+# ---------------- Random Augmentation config (uniform ranges) ----------------
+# The mesh (after normalization) will be uniformly scaled so its AABB fits inside [-h, h]^3
+# h is sampled uniformly in [H_RANGE[0], H_RANGE[1]] at each variant.
+H_RANGE = (0.6, 1.0)
+
+# Z-rotation in degrees sampled uniformly in [Z_ROT_RANGE_DEG[0], Z_ROT_RANGE_DEG[1])
+Z_ROT_RANGE_DEG = (0.0, 360.0)
+
+# Per-axis translations sampled uniformly in the given ranges.
+# Keep these modest so geometry tends to remain in [-1,1]^3 after scale+rotation+translation.
+TRANS_RANGE_X = (-0.15, 0.15)
+TRANS_RANGE_Y = (-0.15, 0.15)
+TRANS_RANGE_Z = (-0.05, 0.05)
+
+# How many random augmentation variants to generate (in addition to the base)
+AUG_NUM_VARIANTS = 10
+
+# Random seed for reproducibility
+AUG_RANDOM_SEED = 42
+
+# Sampling config
+NUM_SURFACE_POINTS = 70000
+GRID_RESOLUTION = 64
+GAUSS_NOISE_STD_BIG = 0.005
+GAUSS_NOISE_STD_SMALL = 0.0005
+
+# SDF scaling (inside vs outside)
+SDF_SCALE_NEG = 10.0
+SDF_SCALE_POS = 1.0
+# ---------------------------------------------------------------------------
+
+
+# ============================================================
+# Geometry utilities
+# ============================================================
 def make_watertight_with_pcu(mesh_path: str):
-    """Create watertight mesh using point-cloud-utils"""
+    """Create watertight mesh using point-cloud-utils."""
     mesh = trimesh.load(mesh_path, force='mesh')
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
@@ -18,116 +56,315 @@ def make_watertight_with_pcu(mesh_path: str):
     verts, faces = pcu.make_mesh_watertight(mesh.vertices, mesh.faces, resolution=20000)
     return verts, faces
 
+
 def normalize_mesh(verts: np.ndarray) -> np.ndarray:
-    """Center and normalize mesh such that diagonal of bounding box = 1"""
+    """
+    Center and normalize mesh so that the diagonal of its axis-aligned bounding box equals 1.
+    - Translation: center of AABB -> origin.
+    - Scaling: divide by AABB diagonal length.
+    """
     min_bb = np.min(verts, axis=0)
     max_bb = np.max(verts, axis=0)
     center = (min_bb + max_bb) / 2.0
     diagonal = np.linalg.norm(max_bb - min_bb)
+    if diagonal <= 0:
+        raise ValueError("Degenerate mesh: zero AABB diagonal")
     return (verts - center) / diagonal
 
+
 def sample_on_surface(mesh: trimesh.Trimesh, num_points: int) -> np.ndarray:
-    """Sample points on mesh surface"""
+    """Sample points on mesh surface (returns only the points)."""
     return trimesh.sample.sample_surface(mesh, num_points)[0]
 
+
 def sample_uniform_grid(resolution: int = 128) -> np.ndarray:
-    """Generate uniform 3D grid of points in [-1, 1]^3"""
+    """Generate a uniform 3D grid of points in [-1, 1]^3 with shape (resolution^3, 3)."""
     lin = np.linspace(-1, 1, resolution)
     grid_x, grid_y, grid_z = np.meshgrid(lin, lin, lin, indexing='ij')
     grid_points = np.stack([grid_x, grid_y, grid_z], axis=-1).reshape(-1, 3)
     return grid_points
 
+
 def compute_signed_distance(verts: np.ndarray, faces: np.ndarray, points: np.ndarray) -> np.ndarray:
-    """Compute signed distance for points"""
+    """Compute signed distance for query points to the given mesh (verts, faces)."""
     return pcu.signed_distance_to_mesh(points, verts, faces)[0]
 
+
 def save_samples(output_dir: str, filename: str, points: np.ndarray, distances: np.ndarray) -> str:
-    """Save sampled points with distances to CSV"""
+    """Save sampled points with distances to CSV (columns: x,y,z,sdf)."""
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, filename)
     np.savetxt(path, np.hstack([points, distances.reshape(-1, 1)]), delimiter=',')
     return path
 
-def scale_sdf(sdf, factor_neg=10.0, factor_pos=1.0):
+
+def scale_sdf(sdf, factor_neg=SDF_SCALE_NEG, factor_pos=SDF_SCALE_POS):
+    """Apply asymmetric scaling: inside distances (negative) get amplified."""
     sdf_scaled = np.where(sdf < 0, sdf * factor_neg, sdf * factor_pos)
     return sdf_scaled
 
-def process_single_model(obj_path: str, surface_output_dir: str, grid_output_dir: str) -> str:
-    """Process a single model and save both surface and grid samples"""
+
+# ============================================================
+# Augmentation utilities (RANDOM)
+# ============================================================
+def aabb_half_extent(verts: np.ndarray) -> float:
+    """
+    Compute the maximum half-extent along any axis of the mesh AABB.
+    i.e., max( (max_x - min_x)/2, (max_y - min_y)/2, (max_z - min_z)/2 )
+    """
+    min_bb = verts.min(axis=0)
+    max_bb = verts.max(axis=0)
+    half_extents = 0.5 * (max_bb - min_bb)
+    return float(np.max(half_extents))
+
+
+def rotation_matrix_z(theta_rad: float) -> np.ndarray:
+    """Return a 3x3 rotation matrix for rotation around +Z by theta (radians)."""
+    c, s = np.cos(theta_rad), np.sin(theta_rad)
+    return np.array([[c, -s, 0.0],
+                     [s,  c, 0.0],
+                     [0.0, 0.0, 1.0]], dtype=np.float64)
+
+
+def transform_verts(verts: np.ndarray, R: np.ndarray, t: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    """Apply uniform scale, then rotation R (3x3), then translation t (3,) to verts."""
+    return (verts * scale) @ R.T + t
+
+
+def augment_mesh_random_variants(
+    verts: np.ndarray,
+    faces: np.ndarray,
+    h_range: tuple[float, float],
+    z_rot_range_deg: tuple[float, float],
+    tx_range: tuple[float, float],
+    ty_range: tuple[float, float],
+    tz_range: tuple[float, float],
+    num_variants: int,
+    seed: int | None = None
+):
+    """
+    Yield 'num_variants' random augmented (verts, faces) variants by sampling uniformly:
+      - h ~ U(h_range[0], h_range[1])  -> fit AABB inside [-h, h]^3
+      - z_deg ~ U(z_rot_range_deg[0], z_rot_range_deg[1])  -> rotation around +Z
+      - t ~ (U(tx_range), U(ty_range), U(tz_range))  -> translation
+
+    Each yielded dict has:
+      {
+        "verts": np.ndarray,
+        "faces": faces,
+        "meta": {
+            "target_half_extent": h,
+            "z_rot_deg": z_deg,
+            "translation": (tx, ty, tz),
+            "scale_applied": scale_to_h
+        }
+      }
+    """
+    rng = np.random.default_rng(seed)
+    base_half_extent = aabb_half_extent(verts)
+    if base_half_extent <= 0:
+        raise ValueError("Degenerate mesh: zero base half-extent for augmentation")
+
+    h_low, h_high = h_range
+    z_low, z_high = z_rot_range_deg
+    tx_low, tx_high = tx_range
+    ty_low, ty_high = ty_range
+    tz_low, tz_high = tz_range
+
+    for _ in range(num_variants):
+        h = rng.uniform(h_low, h_high)
+        z_deg = rng.uniform(z_low, z_high)
+        Rz = rotation_matrix_z(np.deg2rad(z_deg))
+        tx = rng.uniform(tx_low, tx_high)
+        ty = rng.uniform(ty_low, ty_high)
+        tz = rng.uniform(tz_low, tz_high)
+        t_vec = np.array([tx, ty, tz], dtype=np.float64)
+
+        scale_to_h = (h / base_half_extent)
+        aug_verts = transform_verts(verts, Rz, t_vec, scale=scale_to_h)
+
+        yield {
+            "verts": aug_verts,
+            "faces": faces,
+            "meta": {
+                "target_half_extent": float(h),
+                "z_rot_deg": float(z_deg),
+                "translation": (float(tx), float(ty), float(tz)),
+                "scale_applied": float(scale_to_h),
+            }
+        }
+
+
+# ============================================================
+# IO helpers for directory naming
+# ============================================================
+def variant_folder_name(obj_id: str, rot_deg: float, scale_applied: float, tx: float, ty: float, tz: float) -> str:
+    """
+    Build a folder name like:
+      <obj_id>_rot{deg}_s{scale}_tx{tx}_ty{ty}_tz{tz}
+    with fixed number formatting for reproducibility and stable paths.
+    """
+    return (
+        f"{obj_id}"
+        f"_rot{rot_deg:.1f}"
+        f"_s{scale_applied:.3f}"
+        f"_tx{tx:+.3f}"
+        f"_ty{ty:+.3f}"
+        f"_tz{tz:+.3f}"
+    )
+
+
+def write_meta_json(out_dir: str, meta: dict):
+    """Write a small JSON file with augmentation parameters for traceability."""
+    os.makedirs(out_dir, exist_ok=True)
+    meta_path = os.path.join(out_dir, "meta.json")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+
+# ============================================================
+# Processing logic
+# ============================================================
+def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: str) -> str:
+    """
+    Process a single model and save both surface and grid samples for:
+      - the normalized base mesh (diag(AABB)=1) -> saved with rot0/s1/tx0/ty0/tz0
+      - AUG_NUM_VARIANTS random augmentation variants
+
+    Output directory pattern (NO more 'aug_xxx' folders):
+      surface_base_dir / "<obj_id>_rot{deg}_s{scale}_tx{tx}_ty{ty}_tz{tz}" / "sdf_data.csv"
+      grid_base_dir    / "<obj_id>_rot{deg}_s{scale}_tx{tx}_ty{ty}_tz{tz}" / "grid_gt.csv"
+    """
     obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
-    surface_csv = os.path.join(surface_output_dir, "sdf_data.csv")
-    grid_csv = os.path.join(grid_output_dir, "grid_gt.csv")
-    
-    if os.path.exists(surface_csv) and os.path.exists(grid_csv):
+
+    # Build a "base" folder name for the normalized (no-aug) mesh
+    base_folder = variant_folder_name(obj_id, rot_deg=0.0, scale_applied=1.000, tx=0.0, ty=0.0, tz=0.0)
+    base_surface_csv = os.path.join(surface_base_dir, base_folder, "sdf_data.csv")
+    base_grid_csv = os.path.join(grid_base_dir, base_folder, "grid_gt.csv")
+    if os.path.exists(base_surface_csv) and os.path.exists(base_grid_csv):
         return "skipped"
-    
+
     try:
-        # Watertight and normalized
-        verts, faces = make_watertight_with_pcu(obj_path)
-        verts = normalize_mesh(verts)
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+        # 1) Watertight then normalize (diag(AABB)=1)
+        raw_verts, faces = make_watertight_with_pcu(obj_path)
+        base_verts = normalize_mesh(raw_verts)
 
-        # Surface sampling
-        surface_points = sample_on_surface(mesh, 70000)
-        surface_sdf = np.zeros(len(surface_points))
+        # Helper to process and save one (verts, faces) into a named folder
+        def _process_and_save_named(v: np.ndarray, folder_name: str, meta: dict | None = None):
+            mesh = trimesh.Trimesh(vertices=v, faces=faces, process=False)
 
-        # Gaussian perturbations
-        noisy_005 = surface_points + np.random.normal(0, 0.005, surface_points.shape)
-        noisy_0005 = surface_points + np.random.normal(0, 0.0005, surface_points.shape)
+            # Surface sampling (clean + noisy)
+            surface_points = sample_on_surface(mesh, NUM_SURFACE_POINTS)
+            surface_sdf = np.zeros(len(surface_points))
 
-        sdf_005 = scale_sdf(compute_signed_distance(verts, faces, noisy_005))
-        sdf_0005 = scale_sdf(compute_signed_distance(verts, faces, noisy_0005))
+            noisy_big = surface_points + np.random.normal(0, GAUSS_NOISE_STD_BIG, surface_points.shape)
+            noisy_small = surface_points + np.random.normal(0, GAUSS_NOISE_STD_SMALL, surface_points.shape)
 
-        all_points = np.vstack([surface_points, noisy_005, noisy_0005])
-        all_sdf = np.concatenate([surface_sdf, sdf_005, sdf_0005])
+            sdf_big = scale_sdf(compute_signed_distance(v, faces, noisy_big))
+            sdf_small = scale_sdf(compute_signed_distance(v, faces, noisy_small))
 
-        save_samples(surface_output_dir, "sdf_data.csv", all_points, all_sdf)
+            all_points = np.vstack([surface_points, noisy_big, noisy_small])
+            all_sdf = np.concatenate([surface_sdf, sdf_big, sdf_small])
 
-        # Structured grid sampling
-        grid_points = sample_uniform_grid(64)
-        grid_sdf = scale_sdf(compute_signed_distance(verts, faces, grid_points))
-        save_samples(grid_output_dir, "grid_gt.csv", grid_points, grid_sdf)
+            # Grid sampling
+            grid_points = sample_uniform_grid(GRID_RESOLUTION)
+            grid_sdf = scale_sdf(compute_signed_distance(v, faces, grid_points))
+
+            # Output dirs for this variant
+            surf_dir = os.path.join(surface_base_dir, folder_name)
+            grid_dir = os.path.join(grid_base_dir, folder_name)
+
+            save_samples(surf_dir, "sdf_data.csv", all_points, all_sdf)
+            save_samples(grid_dir, "grid_gt.csv", grid_points, grid_sdf)
+
+            if meta is not None:
+                write_meta_json(surf_dir, meta)
+
+        # 2) Base (non-augmented) variant
+        _process_and_save_named(
+            base_verts,
+            base_folder,
+            meta={
+                "variant": "base_normalized",
+                "note": "Diagonal of AABB normalized to 1; no extra scale/rotation/translation.",
+                "z_rot_deg": 0.0,
+                "scale_applied": 1.0,
+                "translation": (0.0, 0.0, 0.0),
+                "aabb_half_extent_after_norm": aabb_half_extent(base_verts),
+            },
+        )
+
+        # 3) Random augmented variants
+        for variant in augment_mesh_random_variants(
+            base_verts,
+            faces,
+            h_range=H_RANGE,
+            z_rot_range_deg=Z_ROT_RANGE_DEG,
+            tx_range=TRANS_RANGE_X,
+            ty_range=TRANS_RANGE_Y,
+            tz_range=TRANS_RANGE_Z,
+            num_variants=AUG_NUM_VARIANTS,
+            seed=AUG_RANDOM_SEED
+        ):
+            zdeg = variant["meta"]["z_rot_deg"]
+            s = variant["meta"]["scale_applied"]
+            tx, ty, tz = variant["meta"]["translation"]
+            folder = variant_folder_name(obj_id, rot_deg=zdeg, scale_applied=s, tx=tx, ty=ty, tz=tz)
+
+            _process_and_save_named(
+                variant["verts"],
+                folder,
+                meta=variant["meta"]
+            )
 
         return "success"
+
     except Exception as e:
         print(f"Error processing {obj_id}: {str(e)}")
         return "failed"
 
-def process_all_couches(shapenet_root: str, acronym_output: str, grid_output: str):
-    """Process all couch models from ShapeNet"""
-    couch_dir = os.path.join(shapenet_root, SHAPENET_couch_CATEGORY)
-    
-    if not os.path.exists(couch_dir):
-        raise FileNotFoundError(f"couch category directory not found at {couch_dir}")
-    
-    model_ids = [d for d in os.listdir(couch_dir) if os.path.isdir(os.path.join(couch_dir, d))]
+
+def process_all_mugs(shapenet_root: str, acronym_output: str, grid_output: str):
+    """Process all mug models from ShapeNet with random augmentation and path encoding."""
+    mug_dir = os.path.join(shapenet_root, SHAPENET_MUG_CATEGORY)
+
+    if not os.path.exists(mug_dir):
+        raise FileNotFoundError(f"mug category directory not found at {mug_dir}")
+
+    model_ids = [d for d in os.listdir(mug_dir) if os.path.isdir(os.path.join(mug_dir, d))]
     stats = {"success": 0, "skipped": 0, "failed": 0}
-    
-    print(f"Processing {len(model_ids)} couch models...")
-    for obj_id in tqdm(model_ids, desc="couch Models"):
-        obj_path = os.path.join(couch_dir, obj_id, MODEL_FILE_PATH)
-        
+
+    print(f"Processing {len(model_ids)} mug models...")
+    for obj_id in tqdm(model_ids, desc="Mug Models"):
+        obj_path = os.path.join(mug_dir, obj_id, MODEL_FILE_PATH)
+
         if not os.path.exists(obj_path):
             stats["failed"] += 1
             continue
-        
-        surface_dir = os.path.join(acronym_output, "couch", obj_id)
-        grid_dir = os.path.join(grid_output, "acronym", "couch", obj_id)
-        
-        result = process_single_model(obj_path, surface_dir, grid_dir)
+
+        # NOTE: base dirs are just ".../acronym/mug" (no obj_id here).
+        surface_base_dir = os.path.join(acronym_output, "mug")
+        grid_base_dir = os.path.join(grid_output, "acronym", "mug")
+
+        result = process_single_model(obj_path, surface_base_dir, grid_base_dir)
         stats[result] += 1
-    
+
     print("\nProcessing Results:")
     print(f"Successful: {stats['success']}")
     print(f"Skipped:    {stats['skipped']}")
     print(f"Failed:     {stats['failed']}")
 
+
+# ============================================================
+# Entrypoint
+# ============================================================
 if __name__ == "__main__":
     SHAPENET_ROOT = "shapenet_download/ShapeNetCore.v2"
     ACRONYM_OUTPUT = "data/acronym"
     GRID_OUTPUT = "data/grid_data"
 
-    os.makedirs(os.path.join(ACRONYM_OUTPUT, "couch"), exist_ok=True)
-    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "couch"), exist_ok=True)
+    # Create the base directories (per-variant folders are created on demand)
+    os.makedirs(os.path.join(ACRONYM_OUTPUT, "mug"), exist_ok=True)
+    os.makedirs(os.path.join(GRID_OUTPUT, "acronym", "mug"), exist_ok=True)
 
-    process_all_couches(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
+    process_all_mugs(SHAPENET_ROOT, ACRONYM_OUTPUT, GRID_OUTPUT)
