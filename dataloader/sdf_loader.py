@@ -13,159 +13,106 @@ import numpy as np
 import csv, json
 
 from tqdm import tqdm
-
 class SdfLoader(base.Dataset):
 
     def __init__(
         self,
-        data_source, # path to points sampled around surface
-        split_file, # json filepath which contains train/test classes and meshes 
-        grid_source=None, # path to grid points; grid refers to sampling throughout the unit cube instead of only around the surface; necessary for preventing artifacts in empty space
+        data_source,
+        split_file,
+        grid_source=None,
         samples_per_mesh=16000,
         pc_size=1024,
-        modulation_path=None # used for third stage of training; needs to be set in config file when some modulation training had been filtered
+        modulation_path=None
     ):
- 
         self.samples_per_mesh = samples_per_mesh
         self.pc_size = pc_size
-        self.gt_files = self.get_instance_filenames(data_source, split_file, filter_modulation_path=modulation_path)
-        subsample = len(self.gt_files) 
-        self.gt_files = self.gt_files[0:subsample]
-        self.paths = self.gt_files
-        self.grid_source = grid_source
-        #print("grid source: ", grid_source)
 
+        # ---- solo liste di path, niente CSV in RAM
+        self.paths = self.get_instance_filenames(
+            data_source, split_file, filter_modulation_path=modulation_path
+        )
+        subsample = len(self.paths)
+        self.paths = self.paths[:subsample]
+
+        self.grid_source = grid_source
+        if grid_source:
+            self.grid_paths = self.get_instance_filenames(
+                grid_source, split_file, gt_filename="grid_gt.csv",
+                filter_modulation_path=modulation_path
+            )
+            self.grid_paths = self.grid_paths[:subsample]
+            assert len(self.grid_paths) == len(self.paths)
+
+        # ---- BPS: precompute UNA VOLTA (e tieni in RAM solo questi)
         self.bps_grid = self._create_bps_grid(grid_size=32, radius=1.5)
 
-        if grid_source:
-            self.grid_files = self.get_instance_filenames(grid_source, split_file, gt_filename="grid_gt.csv", filter_modulation_path=modulation_path)
-            self.grid_files = self.grid_files[0:subsample]
-            lst = []
-            with tqdm(self.grid_files) as pbar:
-                for i, f in enumerate(pbar):
-                    pbar.set_description("Grid files loaded: {}/{}".format(i, len(self.grid_files)))
-                    lst.append(torch.from_numpy(pd.read_csv(f, sep=',',header=None).values))
-            self.grid_files = lst
-            
-            assert len(self.grid_files) == len(self.gt_files)
+        self.preprocessed_bps = []
+        print(f"precomputing BPS for {len(self.paths)} files...")
+        for f in tqdm(self.paths):
+            # carica CSV -> ricava pc -> BPS -> salva SOLO BPS
+            data = torch.from_numpy(pd.read_csv(f, sep=',', header=None).values)
+            pc = self.get_pointcloud(data, load_from_path=False)   # (N,3)
+            pc_bps = self.get_base_points(pc)                      # (3,32,32,32)
+            self.preprocessed_bps.append(pc_bps)
 
+    def __len__(self):
+        return len(self.paths)
 
-        print("loading all {} files into memory...".format(len(self.gt_files)))
-        loaded_data = []
-        preprocessed_pcs = []
-        preprocessed_bps = []
+    def __getitem__(self, idx):
+        # ---- lazy: carica GT solo qui
+        gt_path = self.paths[idx]
+        data = torch.from_numpy(pd.read_csv(gt_path, sep=',', header=None).values)
 
-        with tqdm(self.gt_files) as pbar:
-            for i, f in enumerate(pbar):
-                pbar.set_description("Files loaded: {}/{}".format(i, len(self.gt_files)))
-                
-                # Load CSV file as tensor
-                data = torch.from_numpy(pd.read_csv(f, sep=',', header=None).values)
-                
-                # Get pointcloud from loaded data
-                pc = self.get_pointcloud(data, load_from_path=False)
-                
-                # Apply basis point encoding to the pointcloud
-                pc_bps = self.get_base_points(pc)
-                
-                # Save all for later use
-                loaded_data.append(data)
-                preprocessed_pcs.append(pc)
-                preprocessed_bps.append(pc_bps)
+        near_surface_count = int(self.samples_per_mesh * 0.7) if self.grid_source else self.samples_per_mesh
 
-        self.gt_files = loaded_data          # raw loaded CSV tensors
-        self.preprocessed_pcs = preprocessed_pcs   # raw pointclouds (N, 3)
-        self.preprocessed_bps = preprocessed_bps   # basis point encoded tensors
+        pc, sdf_xyz, sdf_gt = self.labeled_sampling(
+            data, near_surface_count, self.pc_size, load_from_path=False
+        )
 
+        basis_point = self.preprocessed_bps[idx]  # già precalcolato
 
-
-  
-    def __getitem__(self, idx): 
-
-        near_surface_count = int(self.samples_per_mesh*0.7) if self.grid_source else self.samples_per_mesh
-
-        pc, sdf_xyz, sdf_gt =  self.labeled_sampling(self.gt_files[idx], near_surface_count, self.pc_size, load_from_path=False)
-        
-        basis_point = self.preprocessed_bps[idx]
+        grid = None
         if self.grid_source is not None:
+            # lazy: carica grid solo qui
             grid_count = self.samples_per_mesh - near_surface_count
-            _, grid_xyz, grid_gt = self.labeled_sampling(self.grid_files[idx], grid_count, pc_size=grid_count, load_from_path=False)
-            # each getitem is one batch so no batch dimension, only N, 3 for xyz or N for gt 
-            # for 16000 points per batch, near surface is 11200, grid is 4800
-            #print("shapes: ", pc.shape,  sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
-            sdf_xyz = torch.cat((sdf_xyz, grid_xyz))
-            sdf_gt = torch.cat((sdf_gt, grid_gt))
-            grid = self.get_grid(self.grid_files[idx], load_from_path=False)
-            #print("shapes after adding grid: ", pc.shape, sdf_xyz.shape, sdf_gt.shape, grid_xyz.shape, grid_gt.shape)
+            grid_path = self.grid_paths[idx]
+            # usa load_from_path=True per far leggere direttamente dentro labeled_sampling
+            _, grid_xyz, grid_gt = self.labeled_sampling(
+                grid_path, grid_count, pc_size=grid_count, load_from_path=True
+            )
+            sdf_xyz = torch.cat((sdf_xyz, grid_xyz), dim=0)
+            sdf_gt  = torch.cat((sdf_gt,  grid_gt),  dim=0)
+
+            # se ti serve anche la griglia densa:
+            grid_data = torch.from_numpy(pd.read_csv(grid_path, sep=',', header=None).values)
+            grid = self.get_grid(grid_data, load_from_path=False)
 
         data_dict = {
-                    "xyz":sdf_xyz.float().squeeze(),
-                    "gt_sdf":sdf_gt.float().squeeze(), 
-                    "basis_point":basis_point.float().squeeze(),
-                    "grid_point":grid.float().squeeze() if self.grid_source else None,
-                    "point_cloud": pc.float().squeeze(),
-                    "paths": self.paths[idx],
-                    }
-
+            "xyz":         sdf_xyz.float().squeeze(),
+            "gt_sdf":      sdf_gt.float().squeeze(),
+            "basis_point": basis_point.float().squeeze(),
+            "grid_point":  grid.float().squeeze() if (self.grid_source and grid is not None) else None,
+            "point_cloud": pc.float().squeeze(),
+            "paths":       gt_path,
+        }
         return data_dict
-  
 
     def _create_bps_grid(self, grid_size=32, radius=1.5):
-        """Create a fixed BPS reference grid."""
         bps_grid_np = bps.generate_grid_basis(
-            grid_size=grid_size,
-            n_dims=3,
-            minv=-radius,
-            maxv=radius
+            grid_size=grid_size, n_dims=3, minv=-radius, maxv=radius
         )
         return torch.from_numpy(bps_grid_np).float()
 
     def get_base_points(self, pointcloud: torch.Tensor) -> torch.Tensor:
-        """
-        Normalize a single pointcloud and encode it into BPS features 
-        using a fixed, precomputed BPS grid basis.
-
-        Parameters:
-            pointcloud: torch.Tensor, shape (N, 3)
-                Single point cloud.
-
-        Returns:
-            torch.Tensor with BPS encoding of shape (n_bps_points, 3)
-        """
-        # Convert to numpy for bps operations
-        pointcloud_np = pointcloud.detach().cpu().numpy()  # shape (N, 3)
-
-        # Add batch dimension (needed for bps functions expecting [batch, points, dims])
-        pointcloud_np = pointcloud_np[np.newaxis, ...]  # shape (1, N, 3)
-
-        # Normalize (assuming bps.normalize can handle (N,3) arrays)
-        pc_normalized = bps.normalize(pointcloud_np)       # shape (1, N, 3)
-
-        # Check if the fixed bps_grid has changed (should not change!)
+        pointcloud_np = pointcloud.detach().cpu().numpy()[np.newaxis, ...]  # (1,N,3)
+        pc_normalized = bps.normalize(pointcloud_np)
         current_grid = self.bps_grid.cpu().numpy()
-       
-        # Encode using fixed custom BPS grid
         x_bps_grid = bps.encode(
             pc_normalized,
             bps_arrangement='custom',
             custom_basis=current_grid,
             bps_cell_type='deltas',
             n_jobs=1
-        )  # output shape: (1, n_bps_points, 3)
-
-        # Reshape to (1, 32, 32, 32, 3)
-        x_bps_grid = x_bps_grid.reshape(1, 32, 32, 32, 3)
-
-        # Permute to (1, 3, 32, 32, 32)
-        x_bps_grid = x_bps_grid.transpose(0, 4, 1, 2, 3)
-
+        )  # (1, 32*32*32, 3)
+        x_bps_grid = x_bps_grid.reshape(1, 32, 32, 32, 3).transpose(0, 4, 1, 2, 3)  # (1,3,32,32,32)
         return torch.from_numpy(x_bps_grid).float().squeeze(0)
-
-
-
-    def __len__(self):
-        return len(self.gt_files)
-
-
-
-    
