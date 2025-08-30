@@ -11,8 +11,8 @@ def main():
     if not mug_dir.is_dir():
         sys.exit(f"Directory non trovata: {mug_dir}")
 
-    # Prende TUTTI i file .csv e usa il nome completo senza .csv
-    names = [p.stem for p in sorted(mug_dir.glob("*.csv"))]
+    # Prende TUTTI i nomi delle sottodirectory immediate (no file)
+    names = [p.name for p in sorted(mug_dir.iterdir()) if p.is_dir()]
 
     data = {"acronym": {"mug": names}}
     out_path.write_text(json.dumps(data, indent=4), encoding="utf-8")
