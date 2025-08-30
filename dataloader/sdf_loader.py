@@ -59,6 +59,7 @@ class SdfLoader(base.Dataset):
         print(f"loading all {len(self.gt_files)} files into memory (with cache)…")
         for i, f in enumerate(tqdm(self.gt_files, desc="GT+FPS cache")):
             # 1) GT tensor (CSV -> Tensor) with cache
+            print(f"Loading {f}...", i)
             gt_tensor = self._load_or_cache_csv(f, key="gt")
             self.gt_tensors.append(gt_tensor)
 
