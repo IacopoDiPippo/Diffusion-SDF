@@ -4,6 +4,7 @@ import numpy as np
 import trimesh
 import point_cloud_utils as pcu
 from tqdm import tqdm
+from typing import Optional
 
 # ============================================================
 # Constants
@@ -140,7 +141,7 @@ def augment_mesh_random_variants(
     ty_range: tuple[float, float],
     tz_range: tuple[float, float],
     num_variants: int,
-    seed: int | None = None
+    seed: Optional[int] = None
 ):
     """
     Yield 'num_variants' random augmented (verts, faces) variants by sampling uniformly:
@@ -250,7 +251,7 @@ def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: st
         base_verts = normalize_mesh(raw_verts)
 
         # Helper to process and save one (verts, faces) into a named folder
-        def _process_and_save_named(v: np.ndarray, folder_name: str, meta: dict | None = None):
+        def _process_and_save_named(v: np.ndarray, folder_name: str, meta: Optional[dict] = None):
             mesh = trimesh.Trimesh(vertices=v, faces=faces, process=False)
 
             # Surface sampling (clean + noisy)
