@@ -4,7 +4,7 @@ import numpy as np
 import trimesh
 import point_cloud_utils as pcu
 from tqdm import tqdm
-from typing import Optional
+from typing import Optional, Tuple
 
 # ============================================================
 # Constants
@@ -15,19 +15,19 @@ MODEL_FILE_PATH = "models/model_normalized.obj"  # Relative path from object ID 
 # ---------------- Random Augmentation config (uniform ranges) ----------------
 # The mesh (after normalization) will be uniformly scaled so its AABB fits inside [-h, h]^3
 # h is sampled uniformly in [H_RANGE[0], H_RANGE[1]] at each variant.
-H_RANGE = (0.6, 1.0)
+H_RANGE: Tuple[float, float] = (0.6, 0.9)
 
 # Z-rotation in degrees sampled uniformly in [Z_ROT_RANGE_DEG[0], Z_ROT_RANGE_DEG[1])
-Z_ROT_RANGE_DEG = (0.0, 360.0)
+Z_ROT_RANGE_DEG: Tuple[float, float] = (0.0, 360.0)
 
 # Per-axis translations sampled uniformly in the given ranges.
 # Keep these modest so geometry tends to remain in [-1,1]^3 after scale+rotation+translation.
-TRANS_RANGE_X = (-0.15, 0.15)
-TRANS_RANGE_Y = (-0.15, 0.15)
-TRANS_RANGE_Z = (-0.05, 0.05)
+TRANS_RANGE_X: Tuple[float, float] = (-0.15, 0.15)
+TRANS_RANGE_Y: Tuple[float, float] = (-0.15, 0.15)
+TRANS_RANGE_Z: Tuple[float, float] = (-0.05, 0.05)
 
 # How many random augmentation variants to generate (in addition to the base)
-AUG_NUM_VARIANTS = 10
+AUG_NUM_VARIANTS = 30
 
 # Random seed for reproducibility
 AUG_RANDOM_SEED = 42
@@ -73,6 +73,18 @@ def normalize_mesh(verts: np.ndarray) -> np.ndarray:
     return (verts - center) / diagonal
 
 
+def y_up_to_z_up_swap(verts: np.ndarray) -> np.ndarray:
+    """
+    Convert Y-up coordinates to Z-up by swapping Y and Z axes.
+    Mapping: (x, y, z) -> (x, z, y)
+    NOTE: This preserves handedness if the source is right-handed (common for ShapeNet .obj).
+    If you need Z to point in the opposite direction, flip the sign after swap: verts[:, 2] *= -1
+    """
+    v = verts.copy()
+    v[:, [1, 2]] = v[:, [2, 1]]
+    return v
+
+
 def sample_on_surface(mesh: trimesh.Trimesh, num_points: int) -> np.ndarray:
     """Sample points on mesh surface (returns only the points)."""
     return trimesh.sample.sample_surface(mesh, num_points)[0]
@@ -99,7 +111,7 @@ def save_samples(output_dir: str, filename: str, points: np.ndarray, distances: 
     return path
 
 
-def scale_sdf(sdf, factor_neg=SDF_SCALE_NEG, factor_pos=SDF_SCALE_POS):
+def scale_sdf(sdf, factor_neg: float = SDF_SCALE_NEG, factor_pos: float = SDF_SCALE_POS):
     """Apply asymmetric scaling: inside distances (negative) get amplified."""
     sdf_scaled = np.where(sdf < 0, sdf * factor_neg, sdf * factor_pos)
     return sdf_scaled
@@ -122,8 +134,8 @@ def aabb_half_extent(verts: np.ndarray) -> float:
 def rotation_matrix_z(theta_rad: float) -> np.ndarray:
     """Return a 3x3 rotation matrix for rotation around +Z by theta (radians)."""
     c, s = np.cos(theta_rad), np.sin(theta_rad)
-    return np.array([[c, -s, 0.0],
-                     [s,  c, 0.0],
+    return np.array([[ c, -s, 0.0],
+                     [ s,  c, 0.0],
                      [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
@@ -135,11 +147,11 @@ def transform_verts(verts: np.ndarray, R: np.ndarray, t: np.ndarray, scale: floa
 def augment_mesh_random_variants(
     verts: np.ndarray,
     faces: np.ndarray,
-    h_range: tuple[float, float],
-    z_rot_range_deg: tuple[float, float],
-    tx_range: tuple[float, float],
-    ty_range: tuple[float, float],
-    tz_range: tuple[float, float],
+    h_range: Tuple[float, float],
+    z_rot_range_deg: Tuple[float, float],
+    tx_range: Tuple[float, float],
+    ty_range: Tuple[float, float],
+    tz_range: Tuple[float, float],
     num_variants: int,
     seed: Optional[int] = None
 ):
@@ -148,18 +160,6 @@ def augment_mesh_random_variants(
       - h ~ U(h_range[0], h_range[1])  -> fit AABB inside [-h, h]^3
       - z_deg ~ U(z_rot_range_deg[0], z_rot_range_deg[1])  -> rotation around +Z
       - t ~ (U(tx_range), U(ty_range), U(tz_range))  -> translation
-
-    Each yielded dict has:
-      {
-        "verts": np.ndarray,
-        "faces": faces,
-        "meta": {
-            "target_half_extent": h,
-            "z_rot_deg": z_deg,
-            "translation": (tx, ty, tz),
-            "scale_applied": scale_to_h
-        }
-      }
     """
     rng = np.random.default_rng(seed)
     base_half_extent = aabb_half_extent(verts)
@@ -229,16 +229,16 @@ def write_meta_json(out_dir: str, meta: dict):
 def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: str) -> str:
     """
     Process a single model and save both surface and grid samples for:
-      - the normalized base mesh (diag(AABB)=1) -> saved with rot0/s1/tx0/ty0/tz0
+      - the normalized + Y->Z swapped base mesh -> saved with rot0/s1/tx0/ty0/tz0
       - AUG_NUM_VARIANTS random augmentation variants
 
-    Output directory pattern (NO more 'aug_xxx' folders):
+    Output directory pattern:
       surface_base_dir / "<obj_id>_rot{deg}_s{scale}_tx{tx}_ty{ty}_tz{tz}" / "sdf_data.csv"
       grid_base_dir    / "<obj_id>_rot{deg}_s{scale}_tx{tx}_ty{ty}_tz{tz}" / "grid_gt.csv"
     """
     obj_id = os.path.basename(os.path.dirname(os.path.dirname(obj_path)))
 
-    # Build a "base" folder name for the normalized (no-aug) mesh
+    # Base folder (no augmentation)
     base_folder = variant_folder_name(obj_id, rot_deg=0.0, scale_applied=1.000, tx=0.0, ty=0.0, tz=0.0)
     base_surface_csv = os.path.join(surface_base_dir, base_folder, "sdf_data.csv")
     base_grid_csv = os.path.join(grid_base_dir, base_folder, "grid_gt.csv")
@@ -249,6 +249,9 @@ def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: st
         # 1) Watertight then normalize (diag(AABB)=1)
         raw_verts, faces = make_watertight_with_pcu(obj_path)
         base_verts = normalize_mesh(raw_verts)
+
+        # 2) Enforce Z-up by swapping Y and Z (since ShapeNet mugs are Y-up)
+        base_verts = y_up_to_z_up_swap(base_verts)
 
         # Helper to process and save one (verts, faces) into a named folder
         def _process_and_save_named(v: np.ndarray, folder_name: str, meta: Optional[dict] = None):
@@ -281,13 +284,13 @@ def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: st
             if meta is not None:
                 write_meta_json(surf_dir, meta)
 
-        # 2) Base (non-augmented) variant
+        # 3) Base (non-augmented) variant
         _process_and_save_named(
             base_verts,
             base_folder,
             meta={
                 "variant": "base_normalized",
-                "note": "Diagonal of AABB normalized to 1; no extra scale/rotation/translation.",
+                "note": "AABB diagonal normalized to 1; Y-up -> Z-up by swapping Y and Z.",
                 "z_rot_deg": 0.0,
                 "scale_applied": 1.0,
                 "translation": (0.0, 0.0, 0.0),
@@ -295,7 +298,7 @@ def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: st
             },
         )
 
-        # 3) Random augmented variants
+        # 4) Random augmented variants
         for variant in augment_mesh_random_variants(
             base_verts,
             faces,
@@ -343,7 +346,7 @@ def process_all_mugs(shapenet_root: str, acronym_output: str, grid_output: str):
             stats["failed"] += 1
             continue
 
-        # NOTE: base dirs are just ".../acronym/mug" (no obj_id here).
+        # base dirs (per-variant folders are named, not nested by obj_id)
         surface_base_dir = os.path.join(acronym_output, "mug")
         grid_base_dir = os.path.join(grid_output, "acronym", "mug")
 
