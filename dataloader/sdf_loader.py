@@ -99,8 +99,6 @@ class SdfLoader(base.Dataset):
         skip_bad_files: bool = True,
         csv_slow_warn_s: float = 30.0,
     ):
-        super().__init__()
-
         self.samples_per_mesh = samples_per_mesh
         self.pc_size = pc_size
         self.grid_source = grid_source
