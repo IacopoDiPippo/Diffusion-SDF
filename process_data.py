@@ -27,7 +27,7 @@ TRANS_RANGE_Y: Tuple[float, float] = (-0.15, 0.15)
 TRANS_RANGE_Z: Tuple[float, float] = (-0.05, 0.05)
 
 # How many random augmentation variants to generate (in addition to the base)
-AUG_NUM_VARIANTS = 30
+AUG_NUM_VARIANTS = 10
 
 # Random seed for reproducibility
 AUG_RANDOM_SEED = 42
