@@ -151,6 +151,10 @@ class CombinedModel(pl.LightningModule):
             print("  Std:", out[3].std().item())
             print("  Min:", out[3].min().item())
             print("  Max:", out[3].max().item())
+            print("  Mean:", gt.mean().item())
+            print("  Std:", gt.std().item())
+            print("  Min:", gt.min().item())
+            print("  Max:", gt.max().item())
 
         pred_sdf = self.sdf_model.forward_with_base_features(reconstructed_base_point, xyz)
  
@@ -171,7 +175,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) == 5000:
+        if getattr(self, "counter", 0) == 200:
             save_dir = f"visual{self.counter}"
             os.makedirs(save_dir, exist_ok=True)
 
