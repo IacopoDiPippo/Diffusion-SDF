@@ -1,114 +1,44 @@
-import os
-import time
-import json
-import csv
-import hashlib
-import logging
-from typing import Optional, Tuple
-
-import numpy as np
-import pandas as pd
-import torch
-import torch.utils.data
+import os, hashlib, json, numpy as np, pandas as pd, torch, signal, contextlib
 from tqdm import tqdm
 from bps import bps
+from . import base  # la tua base.Dataset
 
-from . import base
-
-
-def _hash_path(path: str) -> str:
-    """Hash robusto: path + size + mtime (invalidazione cache se cambia)."""
+# ---------- timeout helper (Linux / main thread) ----------
+@contextlib.contextmanager
+def time_limit(seconds: int, on_file: str = ""):
+    def handler(signum, frame):
+        raise TimeoutError(f"Timeout ({seconds}s) while reading: {on_file}")
+    old = signal.signal(signal.SIGALRM, handler)
+    signal.alarm(int(seconds))
     try:
-        st = os.stat(path)
-        meta = f"{path}|{st.st_size}|{int(st.st_mtime)}"
-    except OSError:
-        meta = path
-    return hashlib.sha1(meta.encode("utf-8")).hexdigest()
-
-
-def _ensure_contig_f32(x: np.ndarray) -> np.ndarray:
-    return np.ascontiguousarray(x.astype(np.float32, copy=False))
-
-
-def _clean_numeric_ndarray(arr: np.ndarray) -> np.ndarray:
-    """Rimuove righe con NaN/Inf; forza float32 contiguo."""
-    if arr.ndim != 2:
-        arr = arr.reshape(arr.shape[0], -1)
-    # keep only finite rows
-    mask = np.isfinite(arr).all(axis=1)
-    if mask.sum() < arr.shape[0]:
-        print(f"[warn] dropped {arr.shape[0] - mask.sum()} non-finite rows")
-    arr = arr[mask]
-    return _ensure_contig_f32(arr)
-
-
-def _safe_read_csv_to_numpy(
-    csv_path: str,
-    timeout_warn_s: float = 30.0,
-    allow_skip_bad_lines: bool = True
-) -> np.ndarray:
-    """
-    Legge un CSV velocemente; se fallisce, riprova con engine='python' e on_bad_lines='skip'.
-    Logga quanto impiega e warning se > timeout_warn_s.
-    """
-    t0 = time.time()
-    try:
-        df = pd.read_csv(csv_path, sep=",", header=None, dtype=np.float32, engine="c")
-        arr = df.values
-    except Exception as e_c:
-        print(f"[warn] pandas C-engine failed for {csv_path}: {e_c}")
-        try:
-            df = pd.read_csv(
-                csv_path,
-                sep=",",
-                header=None,
-                dtype=np.float32,
-                engine="python",
-                on_bad_lines="skip" if allow_skip_bad_lines else "error",
-            )
-            arr = df.values
-        except Exception as e_py:
-            raise RuntimeError(f"[fatal] both engines failed for {csv_path}: {e_py}") from e_py
-
-    dt = time.time() - t0
-    if dt > timeout_warn_s:
-        print(f"[warn] slow read: {csv_path} took {dt:.1f}s")
-
-    return _clean_numeric_ndarray(arr)
-
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
 
 class SdfLoader(base.Dataset):
-    """
-    Versione robusta con:
-    - cache su disco per CSV e BPS,
-    - fallback engine CSV,
-    - logging del file corrente,
-    - sanitizzazione dei dati,
-    - skip opzionale dei file problematici.
-    """
+    def __init__(self,
+                 data_source,
+                 split_file,
+                 grid_source=None,
+                 samples_per_mesh=16000,
+                 pc_size=1024,
+                 modulation_path=None,
+                 cache_dir=".sdf_cache",
+                 csv_timeout_s=60,
+                 skip_bad_files=True,
+                 verbose_every=1):
 
-    def __init__(
-        self,
-        data_source: str,
-        split_file,
-        grid_source: Optional[str] = None,
-        samples_per_mesh: int = 16000,
-        pc_size: int = 1024,
-        modulation_path: Optional[str] = None,
-        cache_dir: str = ".sdf_cache",
-        skip_bad_files: bool = True,
-        csv_slow_warn_s: float = 30.0,
-    ):
         self.samples_per_mesh = samples_per_mesh
         self.pc_size = pc_size
         self.grid_source = grid_source
         self.cache_dir = cache_dir
-        self.skip_bad_files = skip_bad_files
-        self.csv_slow_warn_s = csv_slow_warn_s
-
+        self.csv_timeout_s = int(csv_timeout_s)
+        self.skip_bad_files = bool(skip_bad_files)
+        self.verbose_every = max(1, int(verbose_every))
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # --- paths
+        # ----- paths -----
         self.gt_files = self.get_instance_filenames(
             data_source, split_file, filter_modulation_path=modulation_path
         )
@@ -116,159 +46,212 @@ class SdfLoader(base.Dataset):
 
         if grid_source:
             self.grid_files = self.get_instance_filenames(
-                grid_source,
-                split_file,
-                gt_filename="grid_gt.csv",
-                filter_modulation_path=modulation_path,
+                grid_source, split_file, gt_filename="grid_gt.csv",
+                filter_modulation_path=modulation_path
             )
-            self.grid_files = self.grid_files[: len(self.gt_files)]
-            assert len(self.grid_files) == len(self.gt_files)
+            assert len(self.grid_files) == len(self.gt_files), "grid/gt size mismatch"
         else:
             self.grid_files = None
 
-        # --- BPS grid
+        # ----- BPS grid -----
         self.bps_grid = self._create_bps_grid(grid_size=32, radius=1.5).contiguous()
         self._bps_grid_np = self.bps_grid.cpu().numpy()
 
-        # --- cache lists
-        self.gt_tensors = []
-        self.preprocessed_bps = []
-        self.grid_tensors = [] if self.grid_source else None
+        # ----- arrays finali -----
+        kept_gt_tensors = []
+        kept_bps = []
+        kept_paths = []
+        kept_grid_tensors = [] if self.grid_source else None
 
-        # --- bad files (persistente)
-        self._bad_file_list_path = os.path.join(self.cache_dir, "bad_files.txt")
-        self._bad = set()
-        if os.path.exists(self._bad_file_list_path):
-            with open(self._bad_file_list_path, "r") as f:
-                self._bad |= {ln.strip() for ln in f if ln.strip()}
+        n_total = len(self.gt_files)
+        print(f"[SdfLoader] caching {n_total} items…", flush=True)
 
-        print(f"loading all {len(self.gt_files)} files into memory (with cache)…")
+        for i, f in enumerate(self.gt_files):
+            # pre-log
+            try:
+                fsize = os.path.getsize(f)
+            except Exception:
+                fsize = -1
+            if (i % self.verbose_every) == 0:
+                print(f"[{i+1}/{n_total}] GT: {f} ({fsize/1e6:.2f} MB)", flush=True)
 
-        keep_gt_files = []
-        keep_grid_files = [] if self.grid_source else None
-
-        for i, f in enumerate(tqdm(self.gt_files, desc="GT+BPS cache")):
-            if f in self._bad:
-                print(f"[skip] previously bad file: {f}")
+            # 1) GT csv -> tensor (cache + timeout + fallback)
+            gt_tensor = self._load_or_cache_csv(f, key="gt")
+            if gt_tensor is None:
+                msg = f"[warn] skip GT (None/failed): {f}"
+                print(msg, flush=True)
+                if not self.skip_bad_files:
+                    raise RuntimeError(msg)
                 continue
 
+            # 2) pointcloud -> BPS (cache)
             try:
-                # 1) GT tensor via cache
-                gt_tensor = self._load_or_cache_csv(f, key="gt")
-                # 2) point cloud → BPS via cache
-                pc = self.get_pointcloud(gt_tensor, load_from_path=False)  # (N,3)
+                pc = self.get_pointcloud(gt_tensor, load_from_path=False)
                 bps_tensor = self._load_or_cache_bps(f, pc)
+                if bps_tensor is None:
+                    raise RuntimeError("BPS is None")
             except Exception as e:
-                msg = f"[error] failed on {f}: {e}"
-                print(msg)
-                if self.skip_bad_files:
-                    self._mark_bad_file(f)
-                    continue
-                else:
+                msg = f"[warn] skip BPS fail for {f}: {e}"
+                print(msg, flush=True)
+                if not self.skip_bad_files:
                     raise
+                continue
 
-            self.gt_tensors.append(gt_tensor)
-            self.preprocessed_bps.append(bps_tensor)
-            keep_gt_files.append(f)
-
+            # 3) grid csv (se richiesto)
             if self.grid_source:
                 gf = self.grid_files[i]
                 try:
-                    grid_tensor = self._load_or_cache_csv(gf, key="grid")
-                except Exception as e:
-                    msg = f"[error] failed on GRID {gf} (for {f}): {e}"
-                    print(msg)
-                    if self.skip_bad_files:
-                        self._mark_bad_file(f)
-                        continue
-                    else:
-                        raise
-                self.grid_tensors.append(grid_tensor)
-                keep_grid_files.append(gf)
+                    gfsize = os.path.getsize(gf)
+                except Exception:
+                    gfsize = -1
+                if (i % self.verbose_every) == 0:
+                    print(f"          GRID: {gf} ({gfsize/1e6:.2f} MB)", flush=True)
 
-        # riduci le liste ai soli “buoni”
-        self.paths = keep_gt_files
-        if self.grid_source:
-            self.grid_files = keep_grid_files
+                grid_tensor = self._load_or_cache_csv(gf, key="grid")
+                if grid_tensor is None:
+                    msg = f"[warn] skip pair (grid failed): {gf}"
+                    print(msg, flush=True)
+                    if not self.skip_bad_files:
+                        raise RuntimeError(msg)
+                    continue
 
-        if len(self.gt_tensors) == 0:
-            raise RuntimeError("No valid files found after filtering. Check your data paths.")
+            # ok, tieni
+            kept_gt_tensors.append(gt_tensor)
+            kept_bps.append(bps_tensor)
+            kept_paths.append(f)
+            if self.grid_source:
+                kept_grid_tensors.append(grid_tensor)
 
-        print(f"[ok] kept {len(self.gt_tensors)} / {len(self.gt_files)} items.")
+        self.gt_tensors = kept_gt_tensors
+        self.preprocessed_bps = kept_bps
+        self.paths = kept_paths
+        self.grid_tensors = kept_grid_tensors if self.grid_source else None
 
-    # ------------------------------------------------------------------ #
-    # caching helpers
-    # ------------------------------------------------------------------ #
+        print(f"[SdfLoader] kept {len(self.gt_tensors)} / {n_total} items.", flush=True)
 
-    def _cache_file(self, path: str, kind: str) -> str:
-        h = _hash_path(path)
+    # ---------------- cache helpers ----------------
+
+    def _hash_path(self, path):
+        try:
+            st = os.stat(path)
+            meta = f"{path}|{st.st_size}|{int(st.st_mtime)}"
+        except OSError:
+            meta = path
+        return hashlib.sha1(meta.encode("utf-8")).hexdigest()
+
+    def _cache_file(self, path, kind):
+        h = self._hash_path(path)
         return os.path.join(self.cache_dir, f"{kind}_{h}.pt")
 
-    def _load_or_cache_csv(self, csv_path: str, key: str = "gt") -> torch.Tensor:
-        cache_path = self._cache_file(csv_path, key)
-        if os.path.exists(cache_path):
-            return torch.load(cache_path, map_location="cpu")
+    def _fast_read_csv(self, csv_path: str):
+        """
+        Lettura robusta:
+        - timeout
+        - engine='c' poi fallback engine='python'
+        - dtype float32
+        - valida colonne (3 o 4)
+        Ritorna torch.Tensor o None.
+        """
+        # 1) tenta engine='c'
+        try:
+            with time_limit(self.csv_timeout_s, on_file=csv_path):
+                arr = pd.read_csv(
+                    csv_path, sep=",", header=None,
+                    dtype=np.float32, engine="c"
+                ).values
+        except TimeoutError as e:
+            print(f"[timeout] {e}", flush=True)
+            return None
+        except Exception as e_c:
+            # 2) fallback: engine='python'
+            print(f"[read_csv warn] '{csv_path}' engine='c' failed: {e_c} -> fallback python", flush=True)
+            try:
+                with time_limit(self.csv_timeout_s, on_file=csv_path):
+                    arr = pd.read_csv(
+                        csv_path, sep=",", header=None,
+                        dtype=np.float32, engine="python"
+                    ).values
+            except TimeoutError as e2:
+                print(f"[timeout] {e2}", flush=True)
+                return None
+            except Exception as e_py:
+                print(f"[read_csv fail] {csv_path}: {e_py}", flush=True)
+                return None
 
-        arr = _safe_read_csv_to_numpy(csv_path, timeout_warn_s=self.csv_slow_warn_s)
-        tens = torch.from_numpy(_ensure_contig_f32(arr))  # (N, 3|4)
-        torch.save(tens, cache_path)
+        # valida forma
+        if arr.ndim != 2 or arr.shape[1] not in (3, 4):
+            print(f"[invalid CSV shape] {csv_path}: {arr.shape}", flush=True)
+            return None
+
+        tens = torch.from_numpy(np.ascontiguousarray(arr))
         return tens
 
-    def _load_or_cache_bps(self, src_path: str, pointcloud_tensor: torch.Tensor) -> torch.Tensor:
+    def _load_or_cache_csv(self, csv_path, key="gt"):
+        cache_path = self._cache_file(csv_path, key)
+        if os.path.exists(cache_path):
+            try:
+                return torch.load(cache_path, map_location="cpu")
+            except Exception as e:
+                print(f"[cache load fail] {cache_path}: {e}; re-reading CSV.", flush=True)
+
+        tens = self._fast_read_csv(csv_path)
+        if tens is not None:
+            try:
+                torch.save(tens, cache_path)
+            except Exception as e:
+                print(f"[cache save fail] {cache_path}: {e}", flush=True)
+        return tens
+
+    def _load_or_cache_bps(self, src_path, pointcloud_tensor):
         cache_path = self._cache_file(src_path, "bps")
         if os.path.exists(cache_path):
-            return torch.load(cache_path, map_location="cpu")
+            try:
+                return torch.load(cache_path, map_location="cpu")
+            except Exception as e:
+                print(f"[cache load fail] {cache_path}: {e}; recomputing BPS.", flush=True)
 
-        bps_tensor = self._get_base_points_from_pc(pointcloud_tensor)  # (3,32,32,32)
-        torch.save(bps_tensor, cache_path)
-        return bps_tensor
-
-    def _mark_bad_file(self, path: str):
-        self._bad.add(path)
         try:
-            with open(self._bad_file_list_path, "a") as f:
-                f.write(path + "\n")
-        except Exception:
-            pass
+            bps_tensor = self._get_base_points_from_pc(pointcloud_tensor)  # (3,32,32,32)
+            torch.save(bps_tensor, cache_path)
+            return bps_tensor
+        except Exception as e:
+            print(f"[bps fail] {src_path}: {e}", flush=True)
+            return None
 
-    # ------------------------------------------------------------------ #
-    # dataset API
-    # ------------------------------------------------------------------ #
+    # ---------------- dataset API ----------------
 
     def __len__(self):
         return len(self.gt_tensors)
 
-    def __getitem__(self, idx: int):
-        near_surface_count = int(self.samples_per_mesh * 0.7) if self.grid_source else self.samples_per_mesh
+    def __getitem__(self, idx):
+        near_n = int(self.samples_per_mesh * 0.7) if self.grid_source else self.samples_per_mesh
 
         pc, sdf_xyz, sdf_gt = self.labeled_sampling(
-            self.gt_tensors[idx], near_surface_count, self.pc_size, load_from_path=False
+            self.gt_tensors[idx], near_n, self.pc_size, load_from_path=False
         )
 
-        basis_point = self.preprocessed_bps[idx]  # (3,32,32,32)
-
+        basis_point = self.preprocessed_bps[idx]
         grid = None
         if self.grid_source:
-            grid_count = self.samples_per_mesh - near_surface_count
+            grid_count = self.samples_per_mesh - near_n
             _, grid_xyz, grid_gt = self.labeled_sampling(
                 self.grid_tensors[idx], grid_count, pc_size=grid_count, load_from_path=False
             )
             sdf_xyz = torch.cat((sdf_xyz, grid_xyz), dim=0)
-            sdf_gt = torch.cat((sdf_gt, grid_gt), dim=0)
+            sdf_gt  = torch.cat((sdf_gt,  grid_gt),  dim=0)
             grid = self.get_grid(self.grid_tensors[idx], load_from_path=False)
 
         return {
-            "xyz": sdf_xyz.float().contiguous(),
-            "gt_sdf": sdf_gt.float().contiguous(),
-            "basis_point": basis_point.float().contiguous(),
-            "grid_point": grid.float().contiguous() if (self.grid_source and grid is not None) else None,
-            "point_cloud": pc.float().contiguous(),
-            "paths": self.paths[idx],
+            "xyz":         sdf_xyz.float().contiguous().squeeze(),
+            "gt_sdf":      sdf_gt.float().contiguous().squeeze(),
+            "basis_point": basis_point.float().contiguous().squeeze(),
+            "grid_point":  (grid.float().contiguous().squeeze()
+                            if (self.grid_source and grid is not None) else None),
+            "point_cloud": pc.float().contiguous().squeeze(),
+            "paths":       self.paths[idx],
         }
 
-    # ------------------------------------------------------------------ #
-    # utilities
-    # ------------------------------------------------------------------ #
+    # ---------------- utilities ----------------
 
     def _create_bps_grid(self, grid_size=32, radius=1.5):
         bps_grid_np = bps.generate_grid_basis(
@@ -277,25 +260,15 @@ class SdfLoader(base.Dataset):
         return torch.from_numpy(np.ascontiguousarray(bps_grid_np))
 
     def _get_base_points_from_pc(self, pointcloud: torch.Tensor) -> torch.Tensor:
-        """
-        pointcloud: (N,3) float32 CPU
-        returns: (3, 32, 32, 32) float32
-        """
         pc_np = pointcloud.detach().cpu().numpy().astype(np.float32, copy=False)
-        if pc_np.ndim != 2 or pc_np.shape[1] != 3:
-            raise ValueError(f"expected pointcloud (N,3), got {pc_np.shape}")
-
         pc_np = pc_np[np.newaxis, ...]  # (1,N,3)
         pc_norm = bps.normalize(pc_np)
-
         x_bps = bps.encode(
             pc_norm,
             bps_arrangement="custom",
             custom_basis=self._bps_grid_np,
             bps_cell_type="deltas",
-            n_jobs=1,
+            n_jobs=1
         )  # (1, 32*32*32, 3)
-
         x_bps = x_bps.reshape(1, 32, 32, 32, 3).transpose(0, 4, 1, 2, 3)  # (1,3,32,32,32)
-        x_bps = _ensure_contig_f32(x_bps)
-        return torch.from_numpy(x_bps).float().squeeze(0)
+        return torch.from_numpy(np.ascontiguousarray(x_bps)).float().squeeze(0)
