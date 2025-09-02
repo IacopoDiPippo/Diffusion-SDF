@@ -373,7 +373,7 @@ class CombinedModel(pl.LightningModule):
         print("Number of counter:", self.counter)
         # ==== DEBUG / VISUALIZATION SNAPSHOTS ===========================================================
         # Esegue ogni 1000 step (non allo step 0). Diviso in tre sezioni: (A) Train, (B) Gen-Train, (C) Gen-Val
-        if getattr(self, "counter", 0) % 1000 == 0 and getattr(self, "counter", 0) > 0:
+        if getattr(self, "counter", 0) % 10 == 0 and getattr(self, "counter", 0) > 0:
 
             import os, json, numpy as np, torch
             from torch.utils.data import DataLoader
