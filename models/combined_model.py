@@ -543,7 +543,7 @@ class CombinedModel(pl.LightningModule):
 
         # ===== VALIDATION / TEST SNAPSHOT OGNI 10 STEP =====
         # esegue quando counter è multiplo di 10 (evita step 0)
-        if getattr(self, "counter", 0) > 0 and (self.counter % 5) == 0:
+        if getattr(self, "counter", 0) > 0 and (self.counter % 200) == 0:
             
             # se serve: from <tuo_modulo_dataset> import ModulationLoader
 
