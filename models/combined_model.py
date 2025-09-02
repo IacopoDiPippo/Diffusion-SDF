@@ -369,323 +369,224 @@ class CombinedModel(pl.LightningModule):
                     }
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
-        # ==== SAVE DEBUG CSVs ====
-        if getattr(self, "counter", 0) % 1000== 0 and self.current_epoch > 0:
-            base_dir = f"visual{self.counter}"
+        # ==== DEBUG / VISUALIZATION SNAPSHOTS ===========================================================
+        # Esegue ogni 1000 step (non allo step 0). Diviso in tre sezioni: (A) Train, (B) Gen-Train, (C) Gen-Val
+        if getattr(self, "counter", 0) % 1000 == 0 and getattr(self, "counter", 0) > 0:
+
+            import os, json, numpy as np, torch
+            from torch.utils.data import DataLoader
+
+            # ----------------------------- CONFIG DI BASE -----------------------------------------------
+            # Directory di output: prefisso "visual1/" e cartella per step
+            base_dir  = os.path.join("visual1", f"visual{self.counter}")
             os.makedirs(base_dir, exist_ok=True)
+
+            # Soglia per ricostruzione dalla SDF
+            TAU = float(self.specs.get("surface_tau", 1e-2))
+
+            # Quante generazioni da N(0,I) per la stessa PC (nel tuo caso = 2)
+            GEN_PER_PC = 2
+
+            # Usa DDIM se specificato
+            USE_DDIM_TRAIN = bool(self.specs.get("train_ddim", False))
+            USE_DDIM_VAL   = bool(self.specs.get("val_ddim",   False))
+
+            # ----------------------------- HELPERS ------------------------------------------------------
+            def stem_base(tag: str, bidx: int, extra: str = "") -> str:
+                """
+                Crea uno 'stem' autoesplicativo:
+                epXXX_gsXXXXXX_<TAG>_b<idx>[_extra]
+                dove TAG ∈ {Atrain, BgenTrain, CgenVal}
+                """
+                gstep = int(getattr(self, "global_step", self.counter))
+                ep    = int(getattr(self, "current_epoch", 0))
+                s = f"ep{ep:03d}_gs{gstep:06d}_{tag}_b{bidx}"
+                if extra:
+                    s += f"_{extra}"
+                return s
+
+            def to_cpu_np(t):
+                return t.detach().cpu().numpy()
+
+            def save_pc_csv(path, pts_tensor):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                np.savetxt(path, to_cpu_np(pts_tensor), delimiter=",")
+
+            def recon_from_sdf(xyz, sdf, tau=TAU, topk_frac=0.1, topk_cap=10000):
+                """
+                Ritorna i punti ricostruiti: |sdf|<tau, fallback ai più vicini a 0.
+                """
+                sdf = sdf.squeeze()
+                xyz = xyz.squeeze()
+                mask = (sdf.abs() < tau)
+                if mask.any():
+                    return xyz[mask]
+                # fallback: top-k più vicini allo zero
+                M = sdf.numel()
+                k = max(1, min(topk_cap, int(M * topk_frac)))
+                idx = torch.topk(-sdf.abs(), k).indices
+                return xyz[idx]
+
+            # ----------------------------- SEZIONE (A) TRAIN SNAPSHOT -----------------------------------
+            # Prende due sample dal batch corrente, salva: gt surface, recon pred, pc condizionante, perturbed pc
             try:
-                save_root = base_dir
-                os.makedirs(save_root, exist_ok=True)
+                # --- estraggo dal batch corrente (variabili presenti nel training step) ---
+                # attesi nel tuo training: xyz, gt_sdf, latent, pc (point_cloud), ecc.
+                # NB: se i tuoi tensori si chiamano in modo diverso, mappa qui.
+                xyz_train      = xyz                       # (B, M, 3)
+                gt_sdf_train   = gt_sdf.squeeze(-1) if gt_sdf.ndim == 3 else gt_sdf  # (B, M)
+                pc_train       = pc                        # (B, N, 3) cond point cloud (se presente)
+                perturbed_here = 'perturbed_pc' in locals() and (perturbed_pc is not None)
 
-                # nomi comodi per versionare i file
-                def make_stem(bidx: int) -> str:
-                    # usa global_step se disponibile, altrimenti fallback a self.counter
-                    gstep = int(getattr(self, "global_step", self.counter))
-                    return f"ep{int(self.current_epoch):03d}_gs{gstep:06d}_b{bidx}"
+                # predizione SDF dal forward del training (già calcolata nel tuo step):
+                # generated_sdf_pred: (B, M) o (B, M, 1)
+                pred_sdf_train = generated_sdf_pred.squeeze(-1) if generated_sdf_pred.ndim == 3 else generated_sdf_pred
 
-                # assicurati che le robe siano sul CPU per salvare
-                xyz_cpu   = xyz.detach().cpu()                         # [B, M, 3]
-                sdf_cpu   = generated_sdf_pred.detach().cpu().squeeze(-1)  # [B, M]
-                if 'perturbed_pc' in locals() and perturbed_pc is not None:
-                    ppc_cpu = perturbed_pc.detach().cpu()              # [B, N, 3]
-                else:
-                    ppc_cpu = None
+                # prendiamo 2 esempi del batch (se <2, fai quello che c'è)
+                B = xyz_train.shape[0]
+                take = min(2, B)
+                for b in range(take):
+                    tag = "Atrain"
+                    stem = stem_base(tag, b)
 
-                B = xyz_cpu.shape[0]
-                for b in range(B):
-                    stem = make_stem(b)
+                    # salva GT surface (ricostruzione da gt_sdf)
+                    gt_surface_b = recon_from_sdf(xyz_train[b], gt_sdf_train[b], tau=TAU)
+                    save_pc_csv(os.path.join(base_dir, f"{stem}_gt_surface.csv"), gt_surface_b)
 
-                    # 1) salva la point cloud perturbata (se presente)
-                    if ppc_cpu is not None and ppc_cpu.ndim == 3:
-                        out_ppc = os.path.join(save_root, f"{stem}_perturbed_pc.csv")
-                        np.savetxt(out_ppc, ppc_cpu[b].numpy(), delimiter=",")
+                    # salva pred recon (ricostruzione da pred_sdf)
+                    pred_surface_b = recon_from_sdf(xyz_train[b], pred_sdf_train[b], tau=TAU)
+                    save_pc_csv(os.path.join(base_dir, f"{stem}_pred_recon.csv"), pred_surface_b)
 
-                    # 2) salva la ricostruzione come point cloud
-                    #    prendi i punti con |SDF| < tau; se zero match, prendi i più vicini allo zero
-                    tau = 1e-2
-                    sdf_b = sdf_cpu[b]          # [M]
-                    xyz_b = xyz_cpu[b]          # [M, 3]
-                    mask  = (sdf_b.abs() < tau)
+                    # salva pc di condizionamento originale (se c'è)
+                    if isinstance(pc_train, torch.Tensor):
+                        save_pc_csv(os.path.join(base_dir, f"{stem}_cond_pc.csv"), pc_train[b])
 
-                    if mask.any():
-                        recon_pts = xyz_b[mask]
+                    # salva perturbed pc usata nel training (se presente)
+                    if perturbed_here and perturbed_pc.ndim == 3:
+                        save_pc_csv(os.path.join(base_dir, f"{stem}_perturbed_pc.csv"), perturbed_pc[b])
+
+            except Exception as e:
+                print(f"[warn][Atrain] failed: {e}")
+
+            # ----------------------------- SEZIONE (B) GEN SU PC DEL TRAIN -------------------------------
+            # Due generazioni diverse dalla stessa cond. PC del batch di training; valutazione su grid_point
+            try:
+                if isinstance(pc, torch.Tensor):
+                    device = next(self.parameters()).device
+
+                    # prendo la prima PC del batch come condizionamento (puoi cambiare la selezione)
+                    b_ref = 0
+                    cond_pc = pc[b_ref:b_ref+1].to(device)          # (1, N, 3)
+
+                    # prendo la grid dal batch corrente, se disponibile, altrimenti ripiego su xyz
+                    grid_train = None
+                    if 'grid_point' in locals() and isinstance(grid_point, torch.Tensor) and grid_point is not None:
+                        grid_train = grid_point[b_ref:b_ref+1].to(device)  # (1, G, 3)
                     else:
-                        M = sdf_b.numel()
-                        k = max(1, min(10000, M // 10))  # top 10% fino a 10k punti
-                        idx = torch.topk(-sdf_b.abs(), k).indices
-                        recon_pts = xyz_b[idx]
+                        grid_train = xyz[b_ref:b_ref+1].to(device)         # fallback (1, M, 3)
 
-                    out_recon = os.path.join(save_root, f"{stem}_recon.csv")
-                    np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                    print(f"Saved prediction visualization to {out_recon}")
+                    # genero 2 campioni diversi (stochasticità interna); per riproducibilità:
+                    # puoi settare due seed diversi qui se vuoi controllare la varianza
+                    samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
+                        cond_pc, batch=GEN_PER_PC, save_pc=None, return_pc=True, ddim=USE_DDIM_TRAIN, perturb_pc=True
+                    )  # samp_latents: (2, dim_z) | pert_pc_used: (1, N, 3)
+
+                    # salvo la cond_pc originale e la perturbed usata
+                    save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "cond_pc") + ".csv"), cond_pc.squeeze(0))
+                    if pert_pc_used is not None and pert_pc_used.ndim == 3:
+                        save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "perturbed_pc") + ".csv"),
+                                    pert_pc_used.squeeze(0).detach().cpu())
+
+                    # decodifica latenti → feature piani → SDF su grid
+                    plane_feats = self.vae_model.decode(samp_latents)  # (2, feat_dim)
+                    grid_rep    = grid_train.repeat(plane_feats.shape[0], 1, 1)  # (2, G, 3)
+                    sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)  # (2, G[,1])
+                    sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
+
+                    # salva le due ricostruzioni (A e B) per confronto
+                    for j in range(GEN_PER_PC):
+                        stem = stem_base("BgenTrain", b_ref, f"gen{j}")
+                        recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
+                        save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
 
             except Exception as e:
-                print(f"[warn] failed to dump CSV point clouds: {e}")
+                print(f"[warn][BgenTrain] failed: {e}")
 
-            # === GENERAZIONE DA NORMALE + DIFFUSIONE CONDIZIONATA ALLA PC DI TRAIN ===
+            # ----------------------------- SEZIONE (C) GEN SU PC DEL VALID -------------------------------
+            # Due generazioni diverse dalla stessa cond. PC del validation loader; valutazione su grid_point del valid
             try:
-                # quante generazioni per ogni PC del batch
-                K = int(self.specs.get("train_gen_per_pc", 3))
-                use_ddim = bool(self.specs.get("train_ddim", False))
+                # prepara (o riusa) il val loader
+                was_training = self.training
+                self.eval()
+                device = next(self.parameters()).device
 
-                # alias comodi
-                device = latent.device
-                B = pc.shape[0] if isinstance(pc, torch.Tensor) else 0
-
-                for b in range(B):
-                    if not isinstance(pc, torch.Tensor):
-                        break  # serve una point cloud di condizionamento
-
-                    stem = make_stem(b)
-                    pc_single = pc[b:b+1]  # (1, N, 3)
-
-                    # genera K latenti partendo da N(0,I) con diffusion condizionata a questa pc
-                    samp_b, pert_pc_b = self.diffusion_model.generate_from_pc(
-                        pc_single, batch=K, save_pc=None, return_pc=True, ddim=use_ddim, perturb_pc=True
-                    )  # samp_b: (K, dim_latent)  |  pert_pc_b: (1, N, 3)
-
-                    # salva la pc perturbata effettivamente usata (una volta per b)
-                    if pert_pc_b is not None and pert_pc_b.ndim == 3:
-                        out_ppc = os.path.join(save_root, f"{stem}_gennorm_perturbed_pc.csv")
-                        np.savetxt(out_ppc, pert_pc_b.squeeze(0).detach().cpu().numpy(), delimiter=",")
-
-                    # decodifica e valuta SDF sugli stessi xyz del batch di training
-                    plane_feats_b = self.vae_model.decode(samp_b)                 # (K, feat_dim)
-                    xyz_b   = xyz[b:b+1]                                          # (1, M, 3)
-                    xyz_rep = xyz_b.repeat(plane_feats_b.shape[0], 1, 1)          # (K, M, 3)
-                    gen_sdf_b = self.sdf_model.forward_with_base_features(plane_feats_b, xyz_rep)  # (K, M) o (K, M, 1)
-
-                    # salva K ricostruzioni come point cloud (|SDF| < tau, fallback ai più vicini a 0)
-                    tau = 1e-2
-                    gen_sdf_cpu = gen_sdf_b.detach().cpu()
-                    if gen_sdf_cpu.ndim == 3:
-                        gen_sdf_cpu = gen_sdf_cpu.squeeze(-1)                     # (K, M)
-                    xyz_cpu_b = xyz_rep.detach().cpu()                             # (K, M, 3)
-
-                    for j in range(plane_feats_b.shape[0]):
-                        sdf_j = gen_sdf_cpu[j]         # (M,)
-                        xyz_j = xyz_cpu_b[j]           # (M, 3)
-                        mask  = (sdf_j.abs() < tau)
-                        if mask.any():
-                            recon_pts = xyz_j[mask]
-                        else:
-                            Mpts = sdf_j.numel()
-                            k = max(1, min(10000, Mpts // 10))
-                            idx = torch.topk(-sdf_j.abs(), k).indices
-                            recon_pts = xyz_j[idx]
-
-                        out_recon = os.path.join(save_root, f"{stem}_gennorm{j}_recon.csv")
-                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                        print(f"[train] Saved cond-gen from Normal -> {out_recon}")
-
-            except Exception as e:
-                print(f"[warn][train] cond-gen from Normal failed: {e}")
-            # === FINE GENERAZIONE CONDIZIONATA (TRAIN) ===
-
-
-            # === SAME INPUT, NEW STOCHASTICITY (nuovi t e noise ad ogni run) ===
-            try:
-
-                # Usa ESATTAMENTE gli stessi input del primo passaggio:
-                #   - latent  (uguale)
-                #   - perturbed_pc  (uguale; se None, resta None)
-                cond_same = perturbed_pc if ('perturbed_pc' in locals()) else None
-                B = latent.shape[0]
-                device = latent.device
-
-                # Quante repliche vuoi salvare con stesso input
-                num_repeats = 2  # produrrà _recon_sameB, _recon_sameC
-
-                for rep in range(num_repeats):
-                    # nuovo timestep per ogni sample del batch
-                    t_rand = torch.randint(
-                        low=0,
-                        high=self.diffusion_model.num_timesteps,
-                        size=(B,),
-                        device=device
-                    ).long()
-
-                    # forward della diffusion con stesso latent e stessa cond,
-                    # MA senza noise esplicito (verrà ricampionato ogni volta)
-                    _, _, _, pred_latent_rep, _ = self.diffusion_model(
-                        latent, t_rand, ret_pred_x=True, cond=cond_same
-                    )
-                    gen_feat_rep = self.vae_model.decode(pred_latent_rep)
-                    gen_sdf_rep  = self.sdf_model.forward_with_base_features(gen_feat_rep, xyz)
-
-                    # salva come point cloud vicino allo zero di SDF
-                    xyz_cpu   = xyz.detach().cpu()                      # (B, M, 3)
-                    sdf_cpu   = gen_sdf_rep.detach().cpu().squeeze(-1)  # (B, M)
-
-                    for b in range(B):
-                        stem = make_stem(b)
-                        tag  = "sameB" if rep == 0 else "sameC"  # cambia suffissi se aumenti num_repeats
-                        tau  = 1e-2
-                        sdf_b = sdf_cpu[b]
-                        xyz_b = xyz_cpu[b]
-                        mask  = (sdf_b.abs() < tau)
-                        if mask.any():
-                            recon_pts = xyz_b[mask]
-                        else:
-                            M = sdf_b.numel()
-                            k = max(1, min(10000, M // 10))
-                            idx = torch.topk(-sdf_b.abs(), k).indices
-                            recon_pts = xyz_b[idx]
-
-                        out_recon = os.path.join(save_root, f"{stem}_recon_{tag}.csv")
-                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                        print(f"Saved prediction visualization to {out_recon}")
-
-            except Exception as e:
-                print(f"[warn] same-input (new t+noise) forward failed: {e}")
-
-        self.counter = getattr(self, "counter", 0) + 1
-
-        # ===== VALIDATION / TEST SNAPSHOT OGNI 10 STEP =====
-        # esegue quando counter è multiplo di 10 (evita step 0)
-        if getattr(self, "counter", 0) > 0 and (self.counter % 200) == 0:
-            
-            # se serve: from <tuo_modulo_dataset> import ModulationLoader
-
-            was_training = self.training
-            self.eval()
-            device = next(self.parameters()).device
-
-            # --- costruisci il dataloader una sola volta e riusalo ---
-            if not hasattr(self, "_val_loader") or (self._val_loader is None):
-                split = json.load(open(self.specs["validation_path"], "r"))
-                self._val_dataset = SdfLoader(
+                if not hasattr(self, "_val_loader") or (self._val_loader is None):
+                    split = json.load(open(self.specs["validation_path"], "r"))
+                    self._val_dataset = SdfLoader(
                         self.specs["DataSource"],
                         split_file=split,
-                        pc_size=self.specs.get("PCsize",1024), grid_source=self.specs.get("GridSource", None), modulation_path=self.specs.get("modulation_path", None)
+                        pc_size=self.specs.get("PCsize", 1024),
+                        grid_source=self.specs.get("GridSource", None),
+                        modulation_path=self.specs.get("modulation_path", None)
+                    )
+                    self._val_loader = DataLoader(
+                        self._val_dataset,
+                        batch_size=8,
+                        num_workers=8,
+                        shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
                     )
 
-                self._val_loader = DataLoader(
-                    self._val_dataset,
-                    batch_size=8,
-                    num_workers=8,
-                    shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
-                )
-            print("Len VALDATALOADER", len(self._val_loader))
-            # dir di salvataggio
-            base_dir = f"visual{self.counter}"
-            os.makedirs(base_dir, exist_ok=True)
-            save_root = base_dir
+                with torch.no_grad():
+                    # prendi un mini-batch dal validation (il primo è sufficiente)
+                    for vbi, vx in enumerate(self._val_loader):
+                        # helper per device
+                        def to_dev(t):
+                            return t.to(device).float() if torch.is_tensor(t) else t
 
-            with torch.no_grad():
-                for vbi, vx in enumerate(self._val_loader):
-                    # vx è un dict come nel training: 'xyz', 'gt_sdf', 'basis_point', 'point_cloud'
-                    # -> manda tutto su device e in float
-                    def to_dev(t):
-                        return t.to(device).float() if torch.is_tensor(t) else t
+                        # unpack con i nomi del tuo dataset (come da signature che mi hai passato)
+                        xyz_v   = to_dev(vx["xyz"])           # (Bv, M, 3)
+                        gt_v    = to_dev(vx["gt_sdf"])        # (Bv, M) o (Bv, M, 1)
+                        base_v  = to_dev(vx["basis_point"])   # (Bv, 1024, 3)
+                        grid_v  = to_dev(vx["grid_point"]) if ("grid_point" in vx and vx["grid_point"] is not None) else xyz_v
+                        pc_v    = to_dev(vx["point_cloud"])   # (Bv, N, 3)
 
-                    xyz_v  = to_dev(vx['xyz'])            # (B, M, 3)
-                    gt_v   = to_dev(vx['gt_sdf'])         # (B, M) o (B, M, 1)
-                    base_v = to_dev(vx['basis_point'])    # (B, 1024, 3)
-                    pc_v   = to_dev(vx['point_cloud']) if ('point_cloud' in vx and isinstance(vx['point_cloud'], torch.Tensor)) else None
+                        # prendo la prima PC del validation come condizionamento
+                        b_ref = 0
+                        cond_pc_val = pc_v[b_ref:b_ref+1]     # (1, N, 3)
+                        grid_val    = grid_v[b_ref:b_ref+1]   # (1, G, 3)
 
-                    # === pipeline IDENTICA al training ===
-                    out_v = self.vae_model(base_v)                 # [decode(z), input, mu, log_var, z]
-                    recon_base_v, latent_v = out_v[0], out_v[-1]
+                        # due generazioni diverse
+                        samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
+                            cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True, ddim=USE_DDIM_VAL, perturb_pc=True
+                        )
 
-                    pred_sdf_v = self.sdf_model.forward_with_base_features(recon_base_v, xyz_v)
+                        # salvo la cond_pc di valid e la perturbed usata
+                        save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "cond_pc") + ".csv"),
+                                    cond_pc_val.squeeze(0))
+                        if pert_pc_used is not None and pert_pc_used.ndim == 3:
+                            save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "perturbed_pc") + ".csv"),
+                                        pert_pc_used.squeeze(0).detach().cpu())
 
-                    cond_v = pc_v if self.specs['diffusion_model_specs']['cond'] else None
-                    diff_loss_v, _, _, pred_latent_v, perturbed_pc_v = self.diffusion_model.diffusion_model_from_latent(latent_v, cond=cond_v)
+                        # decodifica + SDF su grid del validation
+                        plane_feats = self.vae_model.decode(samp_latents)   # (2, feat_dim)
+                        grid_rep    = grid_val.repeat(plane_feats.shape[0], 1, 1)  # (2, G, 3)
+                        sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)  # (2, G[,1])
+                        sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
 
-                    gen_plane_feat_v = self.vae_model.decode(pred_latent_v)
-                    gen_sdf_pred_v   = self.sdf_model.forward_with_base_features(gen_plane_feat_v, xyz_v)
+                        # salva le due ricostruzioni
+                        for j in range(GEN_PER_PC):
+                            stem = stem_base("CgenVal", b_ref, f"gen{j}")
+                            recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
+                            save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
 
-                    # === salvataggio CSV come nel training ===
-                    # helper nome
-                    def make_stem(bidx: int) -> str:
-                        gstep = int(getattr(self, "global_step", self.counter))
-                        return f"ep{int(self.current_epoch):03d}_gs{gstep:06d}_valb{vbi}_b{bidx}"
+                        break  # ci basta il primo mini-batch di valid
 
-                    xyz_cpu   = xyz_v.detach().cpu()
-                    sdf_cpu   = gen_sdf_pred_v.detach().cpu().squeeze(-1)  # [B, M]
-                    ppc_cpu   = perturbed_pc_v.detach().cpu() if (perturbed_pc_v is not None) else None
+                if was_training:
+                    self.train()
 
-                    B = xyz_cpu.shape[0]
-                    for b in range(B):
-                        stem = make_stem(b)
+            except Exception as e:
+                print(f"[warn][CgenVal] failed: {e}")
+        # ==== FINE DEBUG / VISUALIZATION SNAPSHOTS =======================================================
 
-                        # salva perturbed pc, se presente
-                        if (ppc_cpu is not None) and (ppc_cpu.ndim == 3):
-                            out_ppc = os.path.join(save_root, f"{stem}_perturbed_pc.csv")
-                            np.savetxt(out_ppc, ppc_cpu[b].numpy(), delimiter=",")
-
-                        # salva "ricostruzione" come PC: punti con |SDF| < tau; fallback: più vicini allo zero
-                        tau   = 1e-2
-                        sdf_b = sdf_cpu[b]       # (M,)
-                        xyz_b = xyz_cpu[b]       # (M,3)
-                        mask  = (sdf_b.abs() < tau)
-                        if mask.any():
-                            recon_pts = xyz_b[mask]
-                        else:
-                            M = sdf_b.numel()
-                            k = max(1, min(10000, M // 10))
-                            idx = torch.topk(-sdf_b.abs(), k).indices
-                            recon_pts = xyz_b[idx]
-
-                        out_recon = os.path.join(save_root, f"{stem}_recon.csv")
-                        np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                        print(f"Saved prediction visualization to {out_recon}")
-
-                    # === GENERAZIONE DA NORMALE + DIFFUSIONE CONDIZIONATA ALLA POINTCLOUD ===
-                    # per ogni elemento del batch, genero K campioni partendo da N(0, I)
-                    # e uso la diffusion condizionata a pc_v[b] per “denoisare” verso un latente plausibile
-                    K = int(self.specs.get("val_gen_per_pc", 3))  # quanti campioni per point cloud
-                    use_ddim = bool(self.specs.get("val_ddim", False))
-
-                    for b in range(B):
-                        if pc_v is None:
-                            continue  # richiede condizionamento a una pointcloud
-
-                        stem = make_stem(b)
-                        pc_single = pc_v[b:b+1]  # (1, N, 3)
-
-                        # usa l'helper già robusto del modello (fa anche la perturbazione coerente col training)
-                        # NB: generate_from_pc lavora meglio con batch=1 per volta, così eviti mix tra batch
-                        samp_b, pert_pc_b = self.diffusion_model.generate_from_pc(
-                            pc_single, batch=K, save_pc=None, return_pc=True, ddim=use_ddim, perturb_pc=True
-                        )  # samp_b: (K, dim_latent)  |  pert_pc_b: (1, N, 3)
-
-                        # salva la point cloud perturbata usata per la condizione (una volta per b)
-                        if pert_pc_b is not None and pert_pc_b.ndim == 3:
-                            out_ppc = os.path.join(save_root, f"{stem}_gennorm_perturbed_pc.csv")
-                            np.savetxt(out_ppc, pert_pc_b.squeeze(0).cpu().numpy(), delimiter=",")
-
-                        # decodifica ogni latente generato e calcola SDF sugli stessi xyz del valid
-                        plane_feats_b = self.vae_model.decode(samp_b)                # (K, feat_dim)
-                        xyz_b = xyz_v[b:b+1]                                         # (1, M, 3)
-                        xyz_rep = xyz_b.repeat(plane_feats_b.shape[0], 1, 1)         # (K, M, 3)
-                        gen_sdf_b = self.sdf_model.forward_with_base_features(plane_feats_b, xyz_rep)  # (K, M, 1) o (K, M)
-
-                        # salva K ricostruzioni come point cloud: |SDF| < tau (fallback ai più vicini allo zero)
-                        tau = 1e-2
-                        gen_sdf_cpu = gen_sdf_b.detach().cpu().squeeze(-1)  # (K, M)
-                        xyz_cpu_b   = xyz_rep.detach().cpu()                # (K, M, 3)
-
-                        for j in range(plane_feats_b.shape[0]):
-                            sdf_j = gen_sdf_cpu[j]     # (M,)
-                            xyz_j = xyz_cpu_b[j]       # (M, 3)
-                            mask  = (sdf_j.abs() < tau)
-                            if mask.any():
-                                recon_pts = xyz_j[mask]
-                            else:
-                                Mpts = sdf_j.numel()
-                                k = max(1, min(10000, Mpts // 10))
-                                idx = torch.topk(-sdf_j.abs(), k).indices
-                                recon_pts = xyz_j[idx]
-
-                            out_recon = os.path.join(save_root, f"{stem}_gennorm{j}_recon.csv")
-                            np.savetxt(out_recon, recon_pts.numpy(), delimiter=",")
-                            print(f"Saved cond-gen from Normal to {out_recon}")
-                    # === FINE GENERAZIONE CONDIZIONATA ===
-
-            if was_training:
-                self.train()
-        # ===== FINE VALIDATION SNAPSHOT =====
 
         return loss
