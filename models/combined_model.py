@@ -430,94 +430,79 @@ class CombinedModel(pl.LightningModule):
                 return xyz[idx]
 
             # ----------------------------- SEZIONE (A) TRAIN SNAPSHOT -----------------------------------
-            # Prende due sample dal batch corrente, salva: gt surface, recon pred, pc condizionante, perturbed pc
             try:
-                # --- estraggo dal batch corrente (variabili presenti nel training step) ---
-                # attesi nel tuo training: xyz, gt_sdf, latent, pc (point_cloud), ecc.
-                # NB: se i tuoi tensori si chiamano in modo diverso, mappa qui.
-                xyz_train      = xyz                       # (B, M, 3)
-                gt_sdf_train   = gt_sdf.squeeze(-1) if gt_sdf.ndim == 3 else gt_sdf  # (B, M)
-                pc_train       = pc                        # (B, N, 3) cond point cloud (se presente)
-                perturbed_here = 'perturbed_pc' in locals() and (perturbed_pc is not None)
+                with torch.no_grad():
+                    xyz_train      = xyz
+                    gt_sdf_train   = gt.squeeze(-1) if gt.ndim == 3 else gt
+                    pc_train       = pc
+                    perturbed_here = 'perturbed_pc' in locals() and (perturbed_pc is not None)
 
-                # predizione SDF dal forward del training (già calcolata nel tuo step):
-                # generated_sdf_pred: (B, M) o (B, M, 1)
-                pred_sdf_train = generated_sdf_pred.squeeze(-1) if generated_sdf_pred.ndim == 3 else generated_sdf_pred
+                    pred_sdf_train = generated_sdf_pred.squeeze(-1) if generated_sdf_pred.ndim == 3 else generated_sdf_pred
 
-                # prendiamo 2 esempi del batch (se <2, fai quello che c'è)
-                B = xyz_train.shape[0]
-                take = min(2, B)
-                for b in range(take):
-                    tag = "Atrain"
-                    stem = stem_base(tag, b)
+                    B = xyz_train.shape[0]
+                    take = min(2, B)
+                    for b in range(take):
+                        tag = "Atrain"
+                        stem = stem_base(tag, b)
 
-                    # salva GT surface (ricostruzione da gt_sdf)
-                    gt_surface_b = recon_from_sdf(xyz_train[b], gt_sdf_train[b], tau=TAU)
-                    save_pc_csv(os.path.join(base_dir, f"{stem}_gt_surface.csv"), gt_surface_b)
+                        gt_surface_b = recon_from_sdf(xyz_train[b], gt_sdf_train[b], tau=TAU)
+                        save_pc_csv(os.path.join(base_dir, f"{stem}_gt_surface.csv"), gt_surface_b)
 
-                    # salva pred recon (ricostruzione da pred_sdf)
-                    pred_surface_b = recon_from_sdf(xyz_train[b], pred_sdf_train[b], tau=TAU)
-                    save_pc_csv(os.path.join(base_dir, f"{stem}_pred_recon.csv"), pred_surface_b)
+                        pred_surface_b = recon_from_sdf(xyz_train[b], pred_sdf_train[b], tau=TAU)
+                        save_pc_csv(os.path.join(base_dir, f"{stem}_pred_recon.csv"), pred_surface_b)
 
-                    # salva pc di condizionamento originale (se c'è)
-                    if isinstance(pc_train, torch.Tensor):
-                        save_pc_csv(os.path.join(base_dir, f"{stem}_cond_pc.csv"), pc_train[b])
+                        if isinstance(pc_train, torch.Tensor):
+                            save_pc_csv(os.path.join(base_dir, f"{stem}_cond_pc.csv"), pc_train[b])
 
-                    # salva perturbed pc usata nel training (se presente)
-                    if perturbed_here and perturbed_pc.ndim == 3:
-                        save_pc_csv(os.path.join(base_dir, f"{stem}_perturbed_pc.csv"), perturbed_pc[b])
-
+                        if perturbed_here and perturbed_pc.ndim == 3:
+                            save_pc_csv(os.path.join(base_dir, f"{stem}_perturbed_pc.csv"), perturbed_pc[b])
             except Exception as e:
                 print(f"[warn][Atrain] failed: {e}")
 
+
             # ----------------------------- SEZIONE (B) GEN SU PC DEL TRAIN -------------------------------
             # Due generazioni diverse dalla stessa cond. PC del batch di training; valutazione su grid_point
+            # ----------------------------- SEZIONE (B) GEN SU PC DEL TRAIN -------------------------------
             try:
                 if isinstance(pc, torch.Tensor):
                     device = next(self.parameters()).device
-
-                    # prendo la prima PC del batch come condizionamento (puoi cambiare la selezione)
+                    grid_point = x['grid_point'] if 'grid_point' in x else None
                     b_ref = 0
-                    cond_pc = pc[b_ref:b_ref+1].to(device)          # (1, N, 3)
+                    cond_pc = pc[b_ref:b_ref+1].to(device)
 
-                    # prendo la grid dal batch corrente, se disponibile, altrimenti ripiego su xyz
-                    grid_train = None
                     if 'grid_point' in locals() and isinstance(grid_point, torch.Tensor) and grid_point is not None:
-                        grid_train = grid_point[b_ref:b_ref+1].to(device)  # (1, G, 3)
+                        grid_train = grid_point[b_ref:b_ref+1].to(device)
                     else:
-                        grid_train = xyz[b_ref:b_ref+1].to(device)         # fallback (1, M, 3)
+                        grid_train = xyz[b_ref:b_ref+1].to(device)
 
-                    # genero 2 campioni diversi (stochasticità interna); per riproducibilità:
-                    # puoi settare due seed diversi qui se vuoi controllare la varianza
-                    samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
-                        cond_pc, batch=GEN_PER_PC, save_pc=None, return_pc=True, ddim=USE_DDIM_TRAIN, perturb_pc=True
-                    )  # samp_latents: (2, dim_z) | pert_pc_used: (1, N, 3)
+                    with torch.no_grad():
+                        samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
+                            cond_pc, batch=GEN_PER_PC, save_pc=None, return_pc=True,
+                            ddim=USE_DDIM_TRAIN, perturb_pc=True
+                        )
 
-                    # salvo la cond_pc originale e la perturbed usata
-                    save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "cond_pc") + ".csv"), cond_pc.squeeze(0))
-                    if pert_pc_used is not None and pert_pc_used.ndim == 3:
-                        save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "perturbed_pc") + ".csv"),
-                                    pert_pc_used.squeeze(0).detach().cpu())
+                        save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "cond_pc") + ".csv"), cond_pc.squeeze(0))
+                        if pert_pc_used is not None and pert_pc_used.ndim == 3:
+                            save_pc_csv(os.path.join(base_dir, stem_base("BgenTrain", b_ref, "perturbed_pc") + ".csv"),
+                                        pert_pc_used.squeeze(0).detach().cpu())
 
-                    # decodifica latenti → feature piani → SDF su grid
-                    plane_feats = self.vae_model.decode(samp_latents)  # (2, feat_dim)
-                    grid_rep    = grid_train.repeat(plane_feats.shape[0], 1, 1)  # (2, G, 3)
-                    sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)  # (2, G[,1])
-                    sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
+                        plane_feats = self.vae_model.decode(samp_latents)
+                        grid_rep    = grid_train.repeat(plane_feats.shape[0], 1, 1)
+                        sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)
+                        sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
 
-                    # salva le due ricostruzioni (A e B) per confronto
-                    for j in range(GEN_PER_PC):
-                        stem = stem_base("BgenTrain", b_ref, f"gen{j}")
-                        recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
-                        save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
-
+                        for j in range(GEN_PER_PC):
+                            stem = stem_base("BgenTrain", b_ref, f"gen{j}")
+                            recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
+                            save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
             except Exception as e:
                 print(f"[warn][BgenTrain] failed: {e}")
 
+
             # ----------------------------- SEZIONE (C) GEN SU PC DEL VALID -------------------------------
             # Due generazioni diverse dalla stessa cond. PC del validation loader; valutazione su grid_point del valid
+            # ----------------------------- SEZIONE (C) GEN SU PC DEL VALID -------------------------------
             try:
-                # prepara (o riusa) il val loader
                 was_training = self.training
                 self.eval()
                 device = next(self.parameters()).device
@@ -539,55 +524,48 @@ class CombinedModel(pl.LightningModule):
                     )
 
                 with torch.no_grad():
-                    # prendi un mini-batch dal validation (il primo è sufficiente)
                     for vbi, vx in enumerate(self._val_loader):
-                        # helper per device
                         def to_dev(t):
                             return t.to(device).float() if torch.is_tensor(t) else t
 
-                        # unpack con i nomi del tuo dataset (come da signature che mi hai passato)
-                        xyz_v   = to_dev(vx["xyz"])           # (Bv, M, 3)
-                        gt_v    = to_dev(vx["gt_sdf"])        # (Bv, M) o (Bv, M, 1)
-                        base_v  = to_dev(vx["basis_point"])   # (Bv, 1024, 3)
+                        xyz_v   = to_dev(vx["xyz"])
+                        gt_v    = to_dev(vx["gt_sdf"])
+                        base_v  = to_dev(vx["basis_point"])
                         grid_v  = to_dev(vx["grid_point"]) if ("grid_point" in vx and vx["grid_point"] is not None) else xyz_v
-                        pc_v    = to_dev(vx["point_cloud"])   # (Bv, N, 3)
+                        pc_v    = to_dev(vx["point_cloud"])
 
-                        # prendo la prima PC del validation come condizionamento
                         b_ref = 0
-                        cond_pc_val = pc_v[b_ref:b_ref+1]     # (1, N, 3)
-                        grid_val    = grid_v[b_ref:b_ref+1]   # (1, G, 3)
+                        cond_pc_val = pc_v[b_ref:b_ref+1]
+                        grid_val    = grid_v[b_ref:b_ref+1]
 
-                        # due generazioni diverse
                         samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
-                            cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True, ddim=USE_DDIM_VAL, perturb_pc=True
+                            cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True,
+                            ddim=USE_DDIM_VAL, perturb_pc=True
                         )
 
-                        # salvo la cond_pc di valid e la perturbed usata
                         save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "cond_pc") + ".csv"),
                                     cond_pc_val.squeeze(0))
                         if pert_pc_used is not None and pert_pc_used.ndim == 3:
                             save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "perturbed_pc") + ".csv"),
                                         pert_pc_used.squeeze(0).detach().cpu())
 
-                        # decodifica + SDF su grid del validation
-                        plane_feats = self.vae_model.decode(samp_latents)   # (2, feat_dim)
-                        grid_rep    = grid_val.repeat(plane_feats.shape[0], 1, 1)  # (2, G, 3)
-                        sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)  # (2, G[,1])
+                        plane_feats = self.vae_model.decode(samp_latents)
+                        grid_rep    = grid_val.repeat(plane_feats.shape[0], 1, 1)
+                        sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)
                         sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
 
-                        # salva le due ricostruzioni
                         for j in range(GEN_PER_PC):
                             stem = stem_base("CgenVal", b_ref, f"gen{j}")
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
 
-                        break  # ci basta il primo mini-batch di valid
+                        break
 
                 if was_training:
                     self.train()
-
             except Exception as e:
                 print(f"[warn][CgenVal] failed: {e}")
+
         # ==== FINE DEBUG / VISUALIZATION SNAPSHOTS =======================================================
 
 
