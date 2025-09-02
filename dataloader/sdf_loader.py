@@ -183,8 +183,9 @@ class SdfLoader(base.Dataset):
         cache_path = self._cache_file(csv_path, key, ext="npy")
         if os.path.exists(cache_path):
             try:
-                arr = np.load(cache_path, mmap_mode='r')
-                return torch.from_numpy(np.asarray(arr))
+                arr = np.load(cache_path, allow_pickle=False)             # niente mmap
+                return torch.from_numpy(np.array(arr, copy=False))        # tensor con array "normale"
+
             except Exception as e:
                 print(f"[cache load fail] {cache_path}: {e}; re-reading CSV.", flush=True)
 
@@ -203,8 +204,9 @@ class SdfLoader(base.Dataset):
         cache_path = self._cache_file(src_path, "bps", ext="npy")
         if os.path.exists(cache_path):
             try:
-                arr = np.load(cache_path, mmap_mode='r')
-                return torch.from_numpy(np.asarray(arr))
+                arr = np.load(cache_path, allow_pickle=False)             # niente mmap
+                return torch.from_numpy(np.array(arr, copy=False))        # tensor con array "normale"
+
             except Exception as e:
                 print(f"[cache load fail] {cache_path}: {e}; recomputing BPS.", flush=True)
 
