@@ -461,7 +461,6 @@ class CombinedModel(pl.LightningModule):
 
 
             # ----------------------------- SEZIONE (B) GEN SU PC DEL TRAIN -------------------------------
-            # Due generazioni diverse dalla stessa cond. PC del batch di training; valutazione su grid_point
             # ----------------------------- SEZIONE (B) GEN SU PC DEL TRAIN -------------------------------
             try:
                 if isinstance(pc, torch.Tensor):
@@ -470,10 +469,14 @@ class CombinedModel(pl.LightningModule):
                     b_ref = 0
                     cond_pc = pc[b_ref:b_ref+1].to(device)
 
+                    # prendo la grid dal batch corrente, se disponibile, altrimenti ripiego su xyz
                     if 'grid_point' in locals() and isinstance(grid_point, torch.Tensor) and grid_point is not None:
                         grid_train = grid_point[b_ref:b_ref+1].to(device)
                     else:
                         grid_train = xyz[b_ref:b_ref+1].to(device)
+
+                    # subsample grid (es: prendi 1/4 dei punti)
+                    grid_train = grid_train[:, ::4, :]
 
                     with torch.no_grad():
                         samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
@@ -495,12 +498,12 @@ class CombinedModel(pl.LightningModule):
                             stem = stem_base("BgenTrain", b_ref, f"gen{j}")
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
+
             except Exception as e:
                 print(f"[warn][BgenTrain] failed: {e}")
 
 
             # ----------------------------- SEZIONE (C) GEN SU PC DEL VALID -------------------------------
-            # Due generazioni diverse dalla stessa cond. PC del validation loader; valutazione su grid_point del valid
             # ----------------------------- SEZIONE (C) GEN SU PC DEL VALID -------------------------------
             try:
                 was_training = self.training
@@ -538,6 +541,9 @@ class CombinedModel(pl.LightningModule):
                         cond_pc_val = pc_v[b_ref:b_ref+1]
                         grid_val    = grid_v[b_ref:b_ref+1]
 
+                        # subsample anche qui
+                        grid_val = grid_val[:, ::4, :]
+
                         samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
                             cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True,
                             ddim=USE_DDIM_VAL, perturb_pc=True
@@ -559,12 +565,14 @@ class CombinedModel(pl.LightningModule):
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
 
-                        break
+                        break  # ci basta il primo mini-batch di valid
 
                 if was_training:
                     self.train()
+
             except Exception as e:
                 print(f"[warn][CgenVal] failed: {e}")
+
 
         # ==== FINE DEBUG / VISUALIZATION SNAPSHOTS =======================================================
 
