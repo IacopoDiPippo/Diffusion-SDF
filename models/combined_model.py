@@ -370,6 +370,7 @@ class CombinedModel(pl.LightningModule):
         self.log_dict(loss_dict, prog_bar=True, enable_graph=False)
 
         self.counter += 1
+        print("Number of counter:", self.counter)
         # ==== DEBUG / VISUALIZATION SNAPSHOTS ===========================================================
         # Esegue ogni 1000 step (non allo step 0). Diviso in tre sezioni: (A) Train, (B) Gen-Train, (C) Gen-Val
         if getattr(self, "counter", 0) % 1000 == 0 and getattr(self, "counter", 0) > 0:
