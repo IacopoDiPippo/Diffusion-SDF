@@ -525,7 +525,7 @@ class CombinedModel(pl.LightningModule):
                         num_workers=8,
                         shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
                     )
-
+                    print(f"Loaded validation dataset with {len(self._val_dataset)} shapes.")
                 with torch.no_grad():
                     for vbi, vx in enumerate(self._val_loader):
                         def to_dev(t):
