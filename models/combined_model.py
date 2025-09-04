@@ -1,3 +1,4 @@
+import glob
 import torch
 import os
 import numpy as np
@@ -509,6 +510,39 @@ class CombinedModel(pl.LightningModule):
                 was_training = self.training
                 self.eval()
                 device = next(self.parameters()).device
+                import os, json, glob, pprint
+
+                print("\n[DEBUG] === VALID LOADER SETUP ===")
+                print("[DEBUG] CWD:", os.getcwd())
+                print("[DEBUG] specs.validation_path:", self.specs["validation_path"])
+                print("[DEBUG] specs.DataSource:", self.specs["DataSource"])
+                print("[DEBUG] specs.GridSource:", self.specs.get("GridSource", None))
+
+                # Verifica che il file di split esista
+                vp = self.specs["validation_path"]
+                print("[DEBUG] validation_path exists?", os.path.exists(vp))
+
+                # Se stavi facendo json.load(), mostra il tipo
+                split = json.load(open(vp, "r"))
+                print("[DEBUG] type(split):", type(split))
+                if isinstance(split, dict):
+                    print("[DEBUG] split keys:", list(split.keys())[:10])
+                elif isinstance(split, (list, tuple)):
+                    print("[DEBUG] split sample:", split[:5])
+
+                # Controllo a colpo d'occhio: ci sono CSV sotto DataSource?
+                ds = self.specs["DataSource"]
+                print("[DEBUG] glob GT CSV under DataSource:")
+                print("        pattern:", os.path.join(ds, "*", "sdf_data.csv"))
+                print("        found:", len(glob.glob(os.path.join(ds, "*", "sdf_data.csv"))))
+
+                # Idem per la GRID (se c'è)
+                gs = self.specs.get("GridSource", None)
+                if gs:
+                    print("[DEBUG] glob GRID CSV under GridSource:")
+                    print("        pattern:", os.path.join(gs, "*", "grid_gt.csv"))
+                    print("        found:", len(glob.glob(os.path.join(gs, "*", "grid_gt.csv"))))
+                print("[DEBUG] === END VALID LOADER SETUP ===\n")
 
                 if not hasattr(self, "_val_loader") or (self._val_loader is None):
                     split = json.load(open(self.specs["validation_path"], "r"))
