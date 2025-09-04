@@ -498,7 +498,7 @@ class CombinedModel(pl.LightningModule):
                             stem = stem_base("BgenTrain", b_ref, f"gen{j}")
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
-                            print(f"B saved step {i}")
+                            print(f"B saved step {j}")
             except Exception as e:
                 print(f"[warn][BgenTrain] failed: {e}")
 
