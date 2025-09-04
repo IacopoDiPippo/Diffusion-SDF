@@ -255,8 +255,8 @@ def process_single_model(obj_path: str, surface_base_dir: str, grid_base_dir: st
     base_folder = variant_folder_name(obj_id, rot_deg=0.0, scale_applied=1.000, tx=0.0, ty=0.0, tz=0.0)
     base_surface_csv = os.path.join(surface_base_dir, base_folder, "sdf_data.csv")
     base_grid_csv = os.path.join(grid_base_dir, base_folder, "grid_gt.csv")
-    if os.path.exists(base_surface_csv) and os.path.exists(base_grid_csv):
-        return "skipped"
+    """if os.path.exists(base_surface_csv) and os.path.exists(base_grid_csv):
+        return "skipped""""
 
     try:
         # 1) Watertight + normalize
