@@ -537,35 +537,38 @@ class CombinedModel(pl.LightningModule):
                         grid_v  = to_dev(vx["grid_point"]) if ("grid_point" in vx and vx["grid_point"] is not None) else xyz_v
                         pc_v    = to_dev(vx["point_cloud"])
 
-                        b_ref = 0
-                        cond_pc_val = pc_v[b_ref:b_ref+1]
-                        grid_val    = grid_v[b_ref:b_ref+1]
-
                         # subsample anche qui
-                        grid_val = grid_val[:, ::2, ::2, ::2]
+                        grid_v = grid_v[:, ::2, ::2, ::2]
 
-                        samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
-                            cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True,
-                            ddim=USE_DDIM_VAL, perturb_pc=True
-                        )
+                        # ciclo su ogni elemento del batch
+                        for b_ref in range(pc_v.size(0)):
+                            cond_pc_val = pc_v[b_ref:b_ref+1]
+                            grid_val    = grid_v[b_ref:b_ref+1]
 
-                        save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "cond_pc") + ".csv"),
-                                    cond_pc_val.squeeze(0))
-                        if pert_pc_used is not None and pert_pc_used.ndim == 3:
-                            save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "perturbed_pc") + ".csv"),
-                                        pert_pc_used.squeeze(0).detach().cpu())
+                            samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
+                                cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True,
+                                ddim=USE_DDIM_VAL, perturb_pc=True
+                            )
 
-                        plane_feats = self.vae_model.decode(samp_latents)
-                        grid_rep    = grid_val.repeat(plane_feats.shape[0], 1, 1)
-                        sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)
-                        sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
+                            save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "cond_pc") + ".csv"),
+                                        cond_pc_val.squeeze(0))
+                            if pert_pc_used is not None and pert_pc_used.ndim == 3:
+                                save_pc_csv(os.path.join(base_dir, stem_base("CgenVal", b_ref, "perturbed_pc") + ".csv"),
+                                            pert_pc_used.squeeze(0).detach().cpu())
 
-                        for j in range(GEN_PER_PC):
-                            stem = stem_base("CgenVal", b_ref, f"gen{j}")
-                            recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
-                            save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
-                            print("Finito step i di C")
-                        break  # ci basta il primo mini-batch di validazione            
+                            plane_feats = self.vae_model.decode(samp_latents)
+                            grid_rep    = grid_val.repeat(plane_feats.shape[0], 1, 1)
+                            sdf_gen     = self.sdf_model.forward_with_base_features(plane_feats, grid_rep)
+                            sdf_gen     = sdf_gen.squeeze(-1) if sdf_gen.ndim == 3 else sdf_gen
+
+                            for j in range(GEN_PER_PC):
+                                stem = stem_base("CgenVal", b_ref, f"gen{j}")
+                                recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
+                                save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
+                                print(f"[CgenVal] Finito elemento {b_ref}, generazione {j}")
+
+                        break  # volendo processi solo il primo mini-batch, ma tutti i suoi elementi
+
 
                 if was_training:
                     self.train()
