@@ -498,7 +498,7 @@ class CombinedModel(pl.LightningModule):
                             stem = stem_base("BgenTrain", b_ref, f"gen{j}")
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
-
+                            print(f"B saved step {i}")
             except Exception as e:
                 print(f"[warn][BgenTrain] failed: {e}")
 
@@ -564,8 +564,8 @@ class CombinedModel(pl.LightningModule):
                             stem = stem_base("CgenVal", b_ref, f"gen{j}")
                             recon_pts = recon_from_sdf(grid_rep[j], sdf_gen[j], tau=TAU)
                             save_pc_csv(os.path.join(base_dir, f"{stem}_recon.csv"), recon_pts)
-
-                        break  # ci basta il primo mini-batch di valid
+                            print("Finito step i di C")
+                        break  # ci basta il primo mini-batch di validazione            
 
                 if was_training:
                     self.train()
