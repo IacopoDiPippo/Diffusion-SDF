@@ -521,7 +521,7 @@ class CombinedModel(pl.LightningModule):
                     )
                     self._val_loader = DataLoader(
                         self._val_dataset,
-                        batch_size=8,
+                        batch_size=16,
                         num_workers=8,
                         shuffle=False, drop_last=False, pin_memory=True, persistent_workers=False
                     )
@@ -542,7 +542,7 @@ class CombinedModel(pl.LightningModule):
                         grid_val    = grid_v[b_ref:b_ref+1]
 
                         # subsample anche qui
-                        grid_val = grid_val[:, ::4, :]
+                        grid_val = grid_val[:, ::2, ::2, ::2]
 
                         samp_latents, pert_pc_used = self.diffusion_model.generate_from_pc(
                             cond_pc_val, batch=GEN_PER_PC, save_pc=None, return_pc=True,
