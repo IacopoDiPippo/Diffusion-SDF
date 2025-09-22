@@ -123,10 +123,21 @@ python test.py -e config/stage3_uncond/ -r last      # after third stage
 A `recon` folder in the config directory will contain the `.ply` reconstructions. `max_batch` arguments in `test.py` are used for running marching cubes; change it to the max value your GPU memory can hold.
 
 
-## References DIFFUSIONSDF PAPER AND CODE!!
+## References
+
+If you use this repository, please also cite the following works that inspired this project:
+
+### Diffusion-SDF
+```bibtex
 @inproceedings{chou2022diffusionsdf,
   title={Diffusion-SDF: Conditional Generative Modeling of Signed Distance Functions},
   author={Gene Chou and Yuval Bahat and Felix Heide},
   journal={The IEEE International Conference on Computer Vision (ICCV)},
   year={2023}
+}
+@inproceedings{prokudin2019bps,
+  title={Efficient Learning on Point Clouds with Basis Point Sets},
+  author={Prokudin, Sergey and Lassner, Christoph and Romero, Javier},
+  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year={2019}
 }
