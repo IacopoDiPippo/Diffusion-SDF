@@ -1,21 +1,27 @@
+# Diffusion-SDF with Efficient Point Cloud Encoding
+
+Implementation of my Research Assistant project at the **DLR – German Aerospace Center**, developed by **Iacopo Di Pippo**.
+
+This work builds on **Diffusion-SDF (ICCV 2023)** by Gene Chou, Yuval Bahat, and Felix Heide, extending it with a more **efficient and scalable conditioning pipeline** for **3D shape completion** from **partial point clouds**.
+
+---
+
+## 🔹 My Approach
+
+Goal: **probabilistic 3D shape completion** from incomplete observations (e.g., partial point clouds), targeting reliable 3D representations for **robotic grasp planning**.
+
+**What’s new vs. the original Diffusion-SDF:**
+- **VAE + Diffusion** in the latent space for conditional generative modeling of SDFs.
+- **Basis Point Sets (BPS)** for point-cloud conditioning → enables compact **3D CNN** encoders on a regular grid.
+- **Parameter efficiency**: conditioning network reduced from ~12M → ~3M params, encoder from ~16M → ~3M (in my setup).
+- **Implicit SDF decoder (MLP)** for high-quality surfaces without voxelization limits.
+- Explored **attention-based conditioning** to better integrate partial observations and uncertainty.
+
+> Result: a pipeline that is **lighter and more scalable** while preserving strong reconstruction quality.
+
+---
 # Diffusion-SDF: Conditional Generative Modeling of Signed Distance Functions
 
-[**Paper**](https://arxiv.org/abs/2211.13757) | [**Supplement**](https://light.princeton.edu/wp-content/uploads/2023/03/diffusionsdf_supp.pdf) | [**Project Page**](https://light.princeton.edu/publication/diffusion-sdf/) <br>
-
-This repository contains the official implementation of <br> 
-**[ICCV 2023] Diffusion-SDF: Conditional Generative Modeling of Signed Distance Functions** <br>
-[Gene Chou](https://genechou.com), [Yuval Bahat](https://sites.google.com/view/yuval-bahat/home), [Felix Heide](https://www.cs.princeton.edu/~fheide/) <br>
-
-
-If you find our code or paper useful, please consider citing
-```bibtex
-@inproceedings{chou2022diffusionsdf,
-title={Diffusion-SDF: Conditional Generative Modeling of Signed Distance Functions},
-author={Gene Chou and Yuval Bahat and Felix Heide},
-journal={The IEEE International Conference on Computer Vision (ICCV)},
-year={2023}
-}
-```
 
 
 ```cpp
@@ -117,10 +123,10 @@ python test.py -e config/stage3_uncond/ -r last      # after third stage
 A `recon` folder in the config directory will contain the `.ply` reconstructions. `max_batch` arguments in `test.py` are used for running marching cubes; change it to the max value your GPU memory can hold.
 
 
-## References
-We adapt code from <br>
-GenSDF https://github.com/princeton-computational-imaging/gensdf <br>
-DALLE2-pytorch https://github.com/lucidrains/DALLE2-pytorch <br>
-Convolutional Occupancy Networks https://github.com/autonomousvision/convolutional_occupancy_networks (for PointNet encoder) <br>
-Multimodal Shape Completion via cGANs https://github.com/ChrisWu1997/Multimodal-Shape-Completion (for conditional metrics) <br>
-PointFlow https://github.com/stevenygd/PointFlow (for unconditional metrics)
+## References DIFFUSIONSDF PAPER AND CODE!!
+@inproceedings{chou2022diffusionsdf,
+  title={Diffusion-SDF: Conditional Generative Modeling of Signed Distance Functions},
+  author={Gene Chou and Yuval Bahat and Felix Heide},
+  journal={The IEEE International Conference on Computer Vision (ICCV)},
+  year={2023}
+}
